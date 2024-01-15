@@ -1,6 +1,6 @@
 ---
-title: "Prepare stomach content data"
-author: "Max Lindmark"
+title: "Prepare stomach content data for Lammska analysis"
+author: "Max Lindmark & Viktor Thunell"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 format: 
   html:
@@ -42,9 +42,9 @@ home <- here::here()
 
 ## Read data
 
-I downloaded stomach data from the Baltic, all countries, from year 1993-now, on the morning of Sep 22nd. I see lots of new and old data missing. Here's a test script to prepare those data. Text in red are warnings/questions from me.
+I downloaded stomach data from the Baltic, all countries, from year 1993-now, on the morning of Sep 22nd 2023. I see lots of new and old data missing. Here's a test script to prepare those data. Text in red are warnings/questions from me.
 
-In our case study, we want to create a response variable that is the weight ratio of saduria, herring and sprat (separately) to cod weight. Hence we need, per predator, the total weight of these species, and if they are absent, weight should be 0. We also need coordinates for these stomachs. To get there, we need to do the follow:
+In our case study, we want to create a response variable that is the weight ratio of saduria, herring and sprat (separately) to cod weight. Hence we need, per predator, the total weight of these species, and if they are absent, weight should be 0. We also need coordinates for these stomachs. To get there, we need to do the following:
 
 1. Join all data sets
 2. Filter predators with the above prey present and calculate the total weight of these for each predator
@@ -54,29 +54,29 @@ In our case study, we want to create a response variable that is the weight rati
 ```{r}
 #| eval: false
 #| echo: false
-# read_ICES_format <- function(data_dir='.',
-#                              file_inf="File_information.csv",
-#                              haul_inf="HaulInformation.csv",
-#                              pred_inf="PredatorInformation.csv",
-#                              prey_inf="PreyInformation.csv"){
-#  
-#   # test data_dir=stoms; file_inf="File_information.csv";haul_inf="HaulInformation.csv";pred_inf="PredatorInformation.csv";prey_inf="PreyInformation.csv"
-#  
-#   ff<-  readr::read_csv(file.path(data_dir,file_inf))
-#   hh<-  readr::read_csv(file=file.path(data_dir,haul_inf))
-#   pred<-readr::read_csv(file=file.path(data_dir,pred_inf)) %>% dplyr::rename(pred_notes=Notes,pred_l=Length)
-#   prey<-readr::read_csv(file=file.path(data_dir,prey_inf)) %>% dplyr::rename(prey_notes=Notes,prey_l=Length)
-#  
-#   a1<-dplyr::left_join(ff,hh,by = join_by(tblUploadID))
-#   a2<-dplyr::left_join(pred,prey, by = join_by(tblUploadID, tblHaulID, tblPredatorInformationID, Ship,
-#                                                Gear, HaulNo, StationNumber, Year, Month, Day, Time, FishID, AphiaIDPredator))
-#   a<-dplyr::left_join(a1,a2,by = join_by(tblUploadID, tblHaulID, Ship, Gear, HaulNo, StationNumber, Year, Month, Day, Time))
-#   return(a)
-# }
-# a
-# a <- read_ICES_format(data_dir = paste0(home, "/data/stomach/StomachContent_0914334172")) |> as.data.frame()
-# a
-# problems(a)
+read_ICES_format <- function(data_dir='.',
+                             file_inf="File_information.csv",
+                             haul_inf="HaulInformation.csv",
+                             pred_inf="PredatorInformation.csv",
+                             prey_inf="PreyInformation.csv"){
+
+  # test data_dir=stoms; file_inf="File_information.csv";haul_inf="HaulInformation.csv";pred_inf="PredatorInformation.csv";prey_inf="PreyInformation.csv"
+
+  ff<-  readr::read_csv(file.path(data_dir,file_inf))
+  hh<-  readr::read_csv(file=file.path(data_dir,haul_inf))
+  pred<-readr::read_csv(file=file.path(data_dir,pred_inf)) %>% dplyr::rename(pred_notes=Notes,pred_l=Length)
+  prey<-readr::read_csv(file=file.path(data_dir,prey_inf)) %>% dplyr::rename(prey_notes=Notes,prey_l=Length)
+
+  a1<-dplyr::left_join(ff,hh,by = join_by(tblUploadID))
+  a2<-dplyr::left_join(pred,prey, by = join_by(tblUploadID, tblHaulID, tblPredatorInformationID, Ship,
+                                               Gear, HaulNo, StationNumber, Year, Month, Day, Time, FishID, AphiaIDPredator))
+  a<-dplyr::left_join(a1,a2,by = join_by(tblUploadID, tblHaulID, Ship, Gear, HaulNo, StationNumber, Year, Month, Day, Time))
+  return(a)
+}
+
+a <- read_ICES_format(data_dir = paste0(home, "/data/stomach/StomachContent_1004552818")) |> as.data.frame()
+a
+problems(a)
 ```
 
 ```{r read data}
@@ -98,7 +98,7 @@ names(prey)
 ## Join all data files
 We do this specific order: fi -> hi -> pred -> prey.
 
-For some joins, there are multiple column names shared in addition to the key. I suppose I could remove them and keep only the ID key and the non-shared columns, but in I could also keep them. First I need to ensure they are the same, and not only have the same name though. Will also check if both datasets have the same amount of NA before choosing which column to carry from which dataset.
+For some joins, there are multiple column names shared in addition to the key. I suppose I could remove them and keep only the ID key and the non-shared columns, but I could also keep them. First I need to ensure they are the same, and not only have the same name. Will also check if both datasets have the same amount of NA before choosing which column to carry from which dataset.
 
 ```{r}
 hi <- left_join(hi, fi, by = "tblUploadID")
@@ -117,9 +117,9 @@ pred <- left_join(pred |> dplyr::select(-Notes),
 
 ```{r}
 # Quick test!
-# ggplot(pred |> filter(!Year == 2018), aes(IndWgt)) + 
-#   facet_wrap(~Country, scales = "free") + 
-#   geom_histogram()
+ggplot(pred |> filter(!Year == 2018), aes(IndWgt)) +
+  facet_wrap(~Country, scales = "free") +
+  geom_histogram()
 ```
 
 Now let's join predator data to prey data following the same procedure.
