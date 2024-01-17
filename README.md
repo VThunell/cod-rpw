@@ -1,7 +1,4 @@
-# Materials for the CINEA SC10 report "Study on stomach content of fish to update databases and analyse possible changes in diet or food web interactions"
-
-This repository contains all the materials needed to reproduce the results for the Baltic Sea case study.
-
+# Extended analyses of the case study of Baltic Sea cod in the CINEA SC10 report "Study on stomach content of fish to update databases and analyse possible changes in diet or food web interactions"
 
 ## Setup
 
