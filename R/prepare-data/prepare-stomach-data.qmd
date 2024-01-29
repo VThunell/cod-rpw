@@ -294,7 +294,7 @@ which(t) # one empty stomach..
 Now add in the "empty stomachs" using bind_rows. When I `bind_rows`, the columns that are not matching get `NA`. The only column not matching should be the average weight columns. They will get `NA`, and I'll change it to 0.
 
 ```{r}
-#HERE!!!!
+
 # The empty stomachs to be added are those that are empty in predator data. For data before 1985(?) we have no info on whether they are regurgitated or empty because of not eating. For an analysis using all data (1963-) we need to keep n mind why stomachs are empty. 
 # Because of the issue of (VT: not?) getting prey weight even though they are present above, we need to make sure to drop these stomachs in the full data set also before joining, so that we don't treat them as empty!
 
@@ -421,17 +421,14 @@ dd |>
   geom_histogram() +
   facet_wrap(~name, ncol = 1, scales = "free")
 
-# Why are some so big? Could be due to either predator or prey weights. Hard to tell
-t <- dd |> filter(fr_sad < 0.4)
-t <- dd |> filter(fr_spr < 0.4)
-t <- dd |> filter(fr_her < 0.4) 
-
 dd |> filter(fr_her > 1) |> as.data.frame()
 
 dd <- dd |>
   filter(fr_spr < 0.5) |> 
   filter(fr_her < 0.5) |> 
-  filter(fr_sad < 0.5)
+  filter(fr_sad < 0.5) |> 
+  filter(fr_oth < 0.5) |> 
+  filter(fr_tot < 0.5)
 ```
 
 Check the proportion of stomachs without these prey
@@ -446,6 +443,57 @@ dd %>%
 VT: ??
 Seems like fairly high proportions of cod without these key species in stomachs, but again, this is just from memory.
 
+
+Now add in Stefan Neuenfeldts data, add in and remove duplicates
+
+```{r}
+# old <- read_csv(paste0(home, "/data/clean/stefan_stomachs.csv")) |> 
+#   dplyr::select(FR_sad, FR_spr, FR_her, X, Y, year, month, day, pred_weight, pred_size, saduria, sprat, herring,
+#                 lat, lon, square, stom_id) |>
+#   rename(ices_rect = square, 
+#          pred_length = pred_size) |> 
+#   drop_na(FR_sad) |> 
+#   drop_na(FR_spr) |> 
+#   drop_na(FR_her) |> 
+#   drop_na(pred_weight)
+# 
+# # length(which(pred$latP == "NULL"))
+# names(old)
+# old$stom_id # TODO: careful here, there are NA's in the column that calculates the id, so they might be different fish actually
+# 
+# names(dd)
+# 
+# # Fix some columns in the main data before merging
+# dd <- dd |> 
+#   rename(lon = ShootLong,
+#          lat = ShootLat) |>
+#   janitor::clean_names() |>
+#   rename(ices_rect = ice_srectangle, 
+#          FR_spr = fr_spr,
+#          FR_her = fr_her,
+#          FR_sad = fr_sad,
+#          pred_weight = ind_wgt) |> 
+#   mutate(month = as.character(month),
+#          day = as.character(day)) |> 
+#   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
+#   dplyr::select(FR_sad, FR_spr, FR_her, X, Y, year, month, day, pred_weight, pred_length,
+#                 saduria, sprat, herring, lat, lon, ices_rect, depth)
+# 
+# # are there new data in the old period that is not in stefans data?
+# new_old <- dd |> filter(year < 2017)
+# 
+# new_old <- new_old |> mutate(sample_id = paste(year, month, day, ices_rect, sep = "_"))
+# 
+# old <- old |> mutate(sample_id = paste(year, month, day, ices_rect, sep = "_"))
+# 
+# new_old <- new_old |> filter(!sample_id %in% unique(old$sample_id)) |> as.data.frame()
+# 
+# # Make full dataset
+# df <- bind_rows(old, new_old, dd)
+
+```
+
+
 ```{r}
 #| out-width: 100%
 
@@ -453,13 +501,19 @@ Seems like fairly high proportions of cod without these key species in stomachs,
 df <- dd |> 
   rename(lon = ShootLong,
          lat = ShootLat,
-         ices_rect = ICESrectangle, 
+         ices_rect = ICESrectangle,
          pred_weight = IndWgt) |> 
   mutate(Month = as.character(Month),
-         Day = as.character(Day)) |> 
+         Day = as.character(Day),
+         ices_subd = ices.rect2(lon, lat),) |> 
   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
-  dplyr::select(fr_sad, fr_spr, fr_her, fr_oth, Year, Month, Day, pred_weight, pred_length,
-                saduria, sprat, herring, lat, lon, ices_rect, X, Y)#, depth)
+  dplyr::select(fr_sad, fr_spr, fr_her, fr_oth, fr_tot, Year, Month, Day, pred_weight, pred_length, saduria, sprat, herring, lat, lon, ices_rect, ices_subd, X, Y)#, depth)
+
+# Add quarter
+# df <- df |> 
+#   mutate(quarter = ifelse(Month == c(1,2,3), 1, 
+#                           ifelse(Month == c(4,5,6), 2, 
+#                                  ifelse(Month == c(7,8,9), 3, 4))))
 
 # Add sample size per coordinate for plotting
 df_plot <- df |>
@@ -518,6 +572,20 @@ ggplot(df, aes(lon, lat, color = depth)) +
 ```
 
 VT: Old. See to TODO-list in code, and also: at which stage do I filter empty stomachs? Now it's just if they aren't present in the prey data, but there's a lot of processing and maybe I should filter later to not inflate the 0's...
+
+Temporal resolution
+```{r}
+
+pred |>
+  group_by(Year) |>
+  summarize(count = n()) |>
+  ggplot(aes(Year, count)) +  geom_bar(stat="identity") + ylab("#stomachs in ICES database") 
+
+df |>
+  group_by(Year) |>
+  summarize(count = n()) |>
+  ggplot(aes(Year, count)) +  geom_bar(stat="identity")
+```
 
 ```{r}
 # Save data
