@@ -40,13 +40,16 @@ options(ggplot2.continuous.colour = "viridis")
 home <- here::here()
 ```
 
-## Read data
+## Read datan
 
 I downloaded all stomach data from the Baltic, all countries (year 1963-2021), at 16:21  Jan 15 2024. Here's a test script to prepare those data.
 
 The aim of the script is to create a response variable that is the individual level weight ratio of saduria, herring and sprat (separately) to cod. Hence we need, per predator stomach (cod), the total weight (VT:?? or individual) of these species, and if they are absent, weight should be 0 (VT: NA or 0, see code below). We also need coordinates for each cod. To get there, we need to do the following:
 
-1. Read in downloaded data from ICES stomach database
+1. Read in data
+    a. downloaded data from ICES stomach database
+    b. complete new with old database data (since large are still not been uploaded)
+    c. add additional newer data
 2. Filter predators with the above prey present and calculate the total weight of these for each predator
 3. Some renaming and data cleaning
 4. Filter predators where these prey are not present.
