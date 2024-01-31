@@ -70,7 +70,7 @@ old_db <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv"))
 # new_db <- read_csv(paste0(home, "/data/stomach/StomachDataNew.csv")) #edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column
 ```
 
-Have a look at the data... The description of the data can be found here: <http://datsu.ices.dk/web/selRep.aspx?Dataset=157>
+Start with new database data. Have a look at the data... The description of the data can be found here: <http://datsu.ices.dk/web/selRep.aspx?Dataset=157>
 
 ```{r quick glimpse}
 names(fi)
