@@ -32,7 +32,7 @@ library(terra)
 
 # Import some plotting functions
 # Source code for map plots
-# You need: # devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+# You need: devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
 devtools::source_url("https://raw.githubusercontent.com/maxlindmark/pred-prey-overlap/main/R/functions/map-plot.R")
 options(ggplot2.continuous.colour = "viridis")
 
@@ -57,10 +57,17 @@ The aim of the script is to create a response variable that is the individual le
 
 
 ```{r read data}
+# New database data
 fi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/File_information.csv"))
 hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInformation.csv"))
 pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PredatorInformation_edit.csv")) #edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column 'Notes' at row 7139,7144 and 7296.
 prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PreyInformation.csv"))
+
+# Old database data
+old_db <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv")) 
+
+# New data
+# new_db <- read_csv(paste0(home, "/data/stomach/StomachDataNew.csv")) #edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column
 ```
 
 Have a look at the data... The description of the data can be found here: <http://datsu.ices.dk/web/selRep.aspx?Dataset=157>
