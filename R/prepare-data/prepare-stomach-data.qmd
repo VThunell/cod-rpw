@@ -40,7 +40,7 @@ options(ggplot2.continuous.colour = "viridis")
 home <- here::here()
 ```
 
-## Read datan
+## Read data
 
 I downloaded all stomach data from the Baltic, all countries (year 1963-2021), at 16:21  Jan 15 2024. Here's a test script to prepare those data.
 
@@ -49,9 +49,9 @@ The aim of the script is to create a response variable that is the individual le
 1. Read in data
     a. downloaded data from ICES stomach database
     b. complete new with old database data (since large are still not been uploaded)
-    c. add additional newer data
-2. Filter predators with the above prey present and calculate the total weight of these for each predator
-3. Some renaming and data cleaning
+    c. add additional newer data and make data set with one row per prey item
+2. Some renaming and data cleaning
+3. Filter predators with the above prey present and calculate the total weight of these for each predator (one row per predator)
 4. Filter predators where these prey are not present.
 5. Bind rows, and replace NA with 0
 
@@ -59,7 +59,27 @@ The aim of the script is to create a response variable that is the individual le
 ```{r read data}
 # New database data
 fi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/File_information.csv"))
-hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInformation.csv"))
+hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInformation.csv"), 
+               col_types = list(
+                 tblUploadID = col_double(),
+                 tblHaulID = col_double(),
+                 Ship = col_character(),
+                 Gear = col_character(),
+                 HaulNo = col_double(),
+                 StationNumber = col_double(),
+                 Year = col_double(),
+                 Month = col_double(),
+                 Day = col_double(),
+                 Time = col_character(),
+                 ShootLat = col_double(),
+                 ShootLong = col_double(),
+                 HaulLat = col_double(),
+                 HaulLong = col_double(),
+                 ICESrectangle = col_character(),
+                 Depth = col_double(),
+                 Survey = col_character(),
+                 ICESDatabase = col_character(),
+                 Notes =  col_character())) # the parsing issues of hi causes no problems but specifying col_types corrects the datatypes. 
 pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PredatorInformation_edit.csv")) #edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column 'Notes' at row 7139,7144 and 7296.
 prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PreyInformation.csv"))
 
@@ -72,11 +92,167 @@ old_db <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv"))
 
 Start with new database data. Have a look at the data... The description of the data can be found here: <http://datsu.ices.dk/web/selRep.aspx?Dataset=157>
 
-```{r quick glimpse}
+```{r quick glimpse new data}
 names(fi)
 names(hi)
 names(pred)
 names(prey)
+```
+
+```{r quick glimpse and select old data}
+
+# library("fisheryO")
+# area_definition(ecoregion = "Baltic Sea Ecoregion")
+glimpse(old_db)
+# each row contains a prey item, i.e. we have many rows for each predator
+# How to generate and identifier so that we can match the old and new data 
+# ICESsampleID is for the predator i assume, ICESitmeID are prey items and there are duplicates, possibly mainly due to the two two data sets (Year of stomach and Stomach tender d using the same IDs which become duplicates) 
+# By creating an ID with Date (Year, Month and Day), Country and Haul (Haul and HaulNo) we can identify the data missing from the new database data.
+#unique(prey$Ship)
+#unique(old_db$Ship)
+# unique(old_db$Country)
+#The Ship onfo in old data is unclean and hard to use, By instead assuming that Country should be unique to date and haul (sort of Country as a proxy for Ship). However, there are 41506 rows where country and ship is missing. VT removes these. 
+#length(is.na(old_db[which(is.na(old_db$Country)),]$Ship))
+# CSNAsh <- which(is.na(old_db$Country) & is.na(old_db$Ship))
+# old_db <- old_db[-CSNAsh,]
+# missing_dbprey |>
+#   group_by(HaulID) |> 
+#   #select(`Predator_Weight(mean)`) |> 
+#   duplicated() |> 
+#   which() |> 
+#  length()
+
+# old_db |>
+#    select(Country) |>
+#    distinct()
+
+old_db <- old_db |>
+  mutate(Country = ifelse(Country == "Latvia", "LV",
+                            ifelse(Country == "Denmark", "DK", 
+                                   ifelse(Country == "Poland", "PL", 
+                                          ifelse(Country == "Sweden", "SE",
+                                                 ifelse(Country == "Germany", "DE", 
+                                                        ifelse(is.na(Country), "NA", "NotBaltic") ))))))
+
+length(which(is.na(old_db$Country)))
+length(which(is.na(old_db$Haul)))
+length(which(is.na(old_db$ICES_StatRec)))
+
+# we get rid of NAs in Country and almost (198) all in Haul by excluding based on lat lon and Country
+# filter and create identifier
+old_data <- old_db |> 
+  rename(HaulNo = Haul,
+         ICESrectangle = ICES_StatRec) |> 
+  filter(Predator_AphiaID %in% c(126436)) |> # remove non cods
+  filter(between(Latitude, 53, 65.5) & between(Longitude, 10, 24)) |> # ymin = 52; ymax = 60.5; xmin = 10; xmax = 24
+  #filter(!Country == "NotBaltic") |> # Not needed to remove obvious not Baltic data
+  mutate(Haul_ID = paste(Country, Year, Month, Day, HaulNo, ICESrectangle, sep = "_"))
+
+length(which(is.na(old_data$Country)))
+
+# join hi and fi to get ...
+hi <- left_join(hi, fi, by = "tblUploadID")
+
+# add Country and ICESrectangle to prey data from haul data and create identifier
+prey <- prey |>
+  left_join(select(hi, tblUploadID, Country, ICESrectangle), by = "tblUploadID", multiple = "any") |>
+  mutate(Haul_ID = paste(Country, Year, Month, Day, HaulNo, ICESrectangle, sep = "_"))
+
+# identify cod in hauls in the baltic not present in the new data 
+missing_db <- old_data |>
+  anti_join(prey, by = "Haul_ID") # return all rows from x (old_d) without a match in y (prey)
+
+# fix predator lengths and weights
+missing_db2 <- missing_db |> 
+  rename(count_pred = Stomach_TotalNo,
+         pred_length = `Predator_Lengh(mean)`,
+         pred_weight = `Predator_Weight(mean)`) |>
+  mutate(pred_weight_source = ifelse( is.na(pred_weight) | pred_weight <= 0, "estimated", "observed")) |> 
+  mutate(pred_weight = ifelse( is.na(pred_weight) | pred_weight <= 0, (0.01*pred_length^3), pred_weight)) 
+
+# fix prey lengths and weights
+missing_db2 <- missing_db2 |> 
+  rename(count_prey = Prey_TotalNo,
+         prey_length = Prey_Length,
+         prey_weight = Prey_Weight) |>
+  mutate(prey_length = ifelse( prey_length >= 0, `Predator_Lengh(mean)`, Prey_LowerLengthBound)) |>
+  mutate(prey_weight_source = ifelse(is.na(pred_weight) | pred_weight <= 0 & count_prey >= 0 , "estimated", "observed")) |> 
+  mutate(prey_weight = ifelse( is.na(pred_weight) | pred_weight <= 0, (0.01*pred_length^3)*count_prey, pred_weight))
+    
+missing_db2 |> # 97 722 unique predators ?
+  filter( pred_weight > 0) |>
+  filter( prey_weight > 0) |>
+  distinct(`SampleNo(FishID)`, Haul_ID) 
+
+missing_db2 <- missing_db2 |> # predator identifier
+  mutate(pred_ID = paste(Haul_ID, `SampleNo(FishID)`, sep = "_"))
+  
+
+  
+  
+#Stefan has date+station+ship+rectangle+?+?predstorlek+preyvikt+? i.e. he uses the predator and prey weight combined with the haul ID to find unique stomachs. But since there are multiple prey items for each predator, this will create This is not bullet preoof but is likely ok. For this I need length to weight
+
+# Explore Stefan data..
+unique(pred$Coun_)
+# missing_dbprey2 <- missing_dbprey |> 
+#   rowwise() |>
+#   mutate( preds = sum(`Predator_Weight(mean)`, `Predator_Lengh(mean)`, na.rm = TRUE)) |> 
+#   mutate( preys = sum(Prey_Weight, Prey_Length, na.rm = TRUE)) |> 
+#   filter(preds > 0)# & preys > 0)
+# 
+# 
+# #length(which(is.na(missing_dbprey$`SampleNo(FishID)`)))
+# old_missingstomach <- missing_dbprey2 |>
+#   select(`SampleNo(FishID)`, HaulID, Year) |>
+#   #distinct(`SampleNo(FishID)`) |>
+#   distinct(`SampleNo(FishID)`, HaulID) |>
+  
+  nrow() # 63050
+
+old_missingstomach + nrow(pred) # 100000 or 134700 stomachs, c.f. Neuenfeldts 107069 rows. 
+
+missing_dbprey |>
+  select(`SampleNo(FishID)`, HaulID, `Predator_Lengh(mean)`) |>
+  disti
+  # group_by(HaulID) |>
+  # duplicated() |> which() |> length()
+           
+  distinct(Latitude, Longitude) |>
+  summarize(count = n())
+
+# missing_dbprey <- missing_dbprey |>
+#   add_utm_columns(ll_names = c("Longitude", "Latitude"), utm_crs = 32633) 
+# plot_map +
+#   geom_point(data = missing_dbprey, aes(X*1000, Y*1000))
+
+missing <- missing_dbprey |>
+  group_by(Year) |>
+  distinct(`SampleNo(FishID)`) |>
+  summarize(count = n())
+sum(missing$count)
+
+missing_dbprey$`Predator_Lengh(mean)`
+length(which(is.na(missing_dbprey$ICES_ItemID)))  # and many rows without an identifier
+length(which(is.na(missing_dbprey$`SampleNo(FishID)`))) # and lot s
+#dups <- 
+  missing_dbprey |> select(HaulID, ICES_SampleID, ICES_ItemID, `Predator_Weight(mean)`) |> duplicated() |> which()
+#pred <- pred[-dups,]
+
+
+pred |> 
+group_by(Year) |>
+  summarize(count = n()) |>
+  ggplot() +  
+  geom_bar(aes(Year, count), alpha = 1, stat="identity") +
+  geom_bar(data = missing, aes(Year, count),  alpha = 0.5, stat="identity") +
+  ggtitle("Grey bars is missing from new db") +
+  scale_x_continuous(n.breaks = 10) +
+  ylab("# stomachs")
+
+
+# one third of the data has estimated the coordinates 
+#sum(old_db$Estimated_Lat_Lon == "Yes", na.rm = TRUE)/nrow(old_db) 
+
 ```
 
 ## Join all data files
@@ -515,7 +691,7 @@ df <- dd |>
          pred_weight = IndWgt) |> 
   mutate(Month = as.character(Month),
          Day = as.character(Day),
-         ices_subd = ices.rect2(lon, lat),) |> 
+         ices_subd = ices.rect2(lon, lat),) |> ##VT ??? 
   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
   dplyr::select(fr_sad, fr_spr, fr_her, fr_oth, fr_tot, Year, Month, Day, pred_weight, pred_length, saduria, sprat, herring, lat, lon, ices_rect, ices_subd, X, Y)#, depth)
 
