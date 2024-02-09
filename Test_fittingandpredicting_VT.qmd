@@ -38,13 +38,15 @@ invisible(lapply(pkgs, library, character.only = T))
 
 # Import some plotting functions
 # Source code for map plots
-# You need: # devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+# You need:
+# devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
 # devtools::source_url("https://raw.githubusercontent.com/maxlindmark/pred-prey-overlap/main/R/functions/map-plot.R")
 options(ggplot2.continuous.colour = "viridis")
+#remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
 
-# devtools::install_github("seananderson/ggsidekick") # not on CRAN 
 library(ggsidekick)
 theme_set(theme_sleek())
+
 
 # Set path
 home <- here::here()
@@ -72,31 +74,35 @@ df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
          year_f = as.factor(Year),
          month_f = as.factor(Month),
          ices_rect = as.factor(ices_rect),
-         ices_subd = as.factor(ices_subd),
          pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length)) # read_csv(paste0(home, "/data/clean/stomachs.csv")) |> summarise(mean = mean(pred_length))
 
 glimpse(df)
+
 ```
 
 
 ```{r}
-mesh <- make_mesh(df, c("X", "Y"), cutoff = 6)
+mesh <- make_mesh(dfs, c("X", "Y"), cutoff = 6)
 plot(mesh)
 #str(df)
 
+dfs <- sample_n(df, 10000) 
+
 #Max sprat model with ices_rect: FR_spr ~ 0 + year_f + depth_sc + s(pred_length_sc, k=3) + (1|month_f) + (1|ices_rect) see sc10 report
 tot_nospace <- sdmTMB(
-  fr_tot ~ 0 + year_f + depth_sc + s(pred_length_sc, k=3) + (1|month_f) + (1|ices_rect),
+  fr_tot ~ + year_f, #+ depth_sc + s(pred_length_sc, k=3) + (1|month_f) + (1|ices_rect),
   # + (1|ices_subd),
-  data = df,
+  data = dfs,
   mesh = mesh,
   spatial = "off",
   family = tweedie(link = "log"),
 )
 
+object.size(tot_nospace)
+object.size(tot_space)
 tot_space <- sdmTMB(
-  fr_tot ~ 0 + year_f + depth_sc + s(pred_length_sc, k=3) + (1|month_f),
-  data = df,
+  fr_tot ~ 0 + year_f, # + depth_sc + s(pred_length_sc, k=3) + (1|month_f),
+  data = dfs,
   mesh = mesh,
   spatial = "on",
   family = tweedie(link = "log"),
