@@ -82,11 +82,12 @@ glimpse(df)
 
 
 ```{r}
+dfs <- slice_sample(df, n = 40000) 
+
 mesh <- make_mesh(dfs, c("X", "Y"), cutoff = 6)
 plot(mesh)
 #str(df)
 
-dfs <- slice_sample(df, 60000) 
 
 #Max sprat model with ices_rect: FR_spr ~ 0 + year_f + depth_sc + s(pred_length_sc, k=3) + (1|month_f) + (1|ices_rect) see sc10 report
 tot_nospace <- sdmTMB(
@@ -98,7 +99,7 @@ tot_nospace <- sdmTMB(
   family = tweedie(link = "log"),
 )
 
-object.size(tot_nospace)
+object.size(tot_nospace) / 10^9 # gb
 
 tot_space <- sdmTMB(
   fr_tot ~ 0 + year_f, # + depth_sc + s(pred_length_sc, k=3) + (1|month_f),
@@ -107,11 +108,12 @@ tot_space <- sdmTMB(
   spatial = "on",
   family = tweedie(link = "log"),
 )
-# what is the "b_j standard error"
+
 sanity(tot_nospace)
 sanity(tot_space)
 
 tot_nospace
+tot_space
 
 tidy(tot_nospace)
 tidy(tot_nospace, effects= "ran_pars", conf.int = TRUE)
@@ -120,13 +122,13 @@ tidy(tot_space, effects= "ran_pars", conf.int = TRUE)
 predict(tot_space)
 
 #Maxs code differs from sdmTMB intro. 
-# nospace_res <- residuals(tot_nospace, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(tot_space, mcmc_iter = 201, mcmc_warmup = 200))
-nospace_res <- sdmTMBextra::predict_mle_mcmc(tot_nospace, mcmc_warmup = 200, mcmc_iter = 201)
+nospace_res <- residuals(tot_nospace, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(tot_space, mcmc_iter = 201, mcmc_warmup = 200))
+#nospace_res <- sdmTMBextra::predict_mle_mcmc(tot_nospace, mcmc_warmup = 200, mcmc_iter = 201)
 
 # space_res <- mcmc_res <- residuals(tot_nospace, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(fit_spr_m2, mcmc_iter = 201, mcmc_warmup = 200))
 space_res <- sdmTMBextra::predict_mle_mcmc(tot_space, mcmc_warmup = 200, mcmc_iter = 201)
 
-# Both the randomized quantile residuals (returned by residuals()) and the MCMC based ones looks fine...
+# The randomized quantile residuals (returned by residuals()) and the MCMC based ones
 qqnorm(residuals(tot_nospace))
 qqline(residuals(tot_nospace))
 qqnorm(residuals(tot_nospace, "mle-mcmc", mcmc_samples = nospace_res))
@@ -152,14 +154,6 @@ df |>
   facet_wrap(~year_f) +
   coord_fixed()
   
-#What predictors to go with? What can explain the variation of total weight in the stomachs? 
-# Time of the year! (month) as factor (month_f).
-# Year as factor (? exaclty why and how/if does this differ from the temporal effect) 
-# depth (scaled or actual)
-# where? (rectangles, subdivision, coordinates)
-# Max uses predator length, we already have size (weight) in the ratio. How does length contribute (length based consumption unrelated to condition somehow?) Length is better than weight because it is not estimated for many of the fish.
-# why the smoother on lenght.
-# What should be random? Month is obvious ( or is it, see SC10). Subdivision would estimate effects that depend on where in the baltic the fish is on a large scale (a factor varying in space). Max has rectangles when he does not have spatial fields in his cross val.?
 
 ```
 
