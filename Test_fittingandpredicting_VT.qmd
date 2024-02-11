@@ -86,11 +86,11 @@ mesh <- make_mesh(dfs, c("X", "Y"), cutoff = 6)
 plot(mesh)
 #str(df)
 
-dfs <- sample_n(df, 10000) 
+dfs <- slice_sample(df, 60000) 
 
 #Max sprat model with ices_rect: FR_spr ~ 0 + year_f + depth_sc + s(pred_length_sc, k=3) + (1|month_f) + (1|ices_rect) see sc10 report
 tot_nospace <- sdmTMB(
-  fr_tot ~ + year_f, #+ depth_sc + s(pred_length_sc, k=3) + (1|month_f) + (1|ices_rect),
+  fr_tot ~ 0 + year_f, #+ depth_sc + s(pred_length_sc, k=3) + (1|month_f) + (1|ices_rect),
   # + (1|ices_subd),
   data = dfs,
   mesh = mesh,
@@ -99,7 +99,7 @@ tot_nospace <- sdmTMB(
 )
 
 object.size(tot_nospace)
-object.size(tot_space)
+
 tot_space <- sdmTMB(
   fr_tot ~ 0 + year_f, # + depth_sc + s(pred_length_sc, k=3) + (1|month_f),
   data = dfs,
@@ -111,8 +111,7 @@ tot_space <- sdmTMB(
 sanity(tot_nospace)
 sanity(tot_space)
 
- 
-tot_space
+tot_nospace
 
 tidy(tot_nospace)
 tidy(tot_nospace, effects= "ran_pars", conf.int = TRUE)
