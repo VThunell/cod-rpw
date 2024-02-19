@@ -49,7 +49,7 @@ The aim of the script is to create a response variable that is the individual le
 1. Read in data
     a. downloaded data from ICES stomach database
     b. complete new with old database data (since large are still not been uploaded)
-    c. add additional newer data and make data set with one row per prey item
+    c. add additional newer (SE) data and make data set with one row per prey item
 2. Some renaming and data cleaning
 3. Filter predators with the above prey present and calculate the total weight of these for each predator (one row per predator)
 4. Filter predators where these prey are not present. VT??
@@ -86,8 +86,8 @@ prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PreyInfor
 # DAPSTOM old database data (ODB)
 shimmyshimmy <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv")) 
 
-# New data
-# new_db <- read_csv(paste0(home, "/data/stomach/StomachDataNew.csv")) 
+# New SE data
+SE <- read_csv(paste0(home, "/data/stomach/aggregated_stomach_data.csv")) 
 ```
 ## New database data (DAPSTOM 6.3, dowloaded Jan 15 2024)
 Start with new database data. Have a look at the data... The description of the data can be found here: <http://datsu.ices.dk/web/selRep.aspx?Dataset=157>
@@ -447,12 +447,30 @@ mm |>
 # #sum(old_db$Estimated_Lat_Lon == "Yes", na.rm = TRUE)/nrow(old_db) 
 
 ```
+## New SE data
+
+```{r}
+# rename and mutate
+
+ll <- SE |>
+  drop_na(group) |>
+  drop_na(oxy) |>
+  rename(herring = clupea_harengus_tot,
+         saduria = saduria_entomon_tot,
+         sprat = sprattus_sprattus_tot,
+         pred_weight = pred_weight_g,
+         pred_length = pred_length_cm) |>
+  mutate(other = amphipoda_tot + bivalvia_tot + gadus_morhua_tot +  gobiidae_tot + mysidae_tot + non_bio_tot +
+         other_crustacea_tot + other_tot + other_pisces_tot + platichthys_flesus_tot + polychaeta_tot)
+
+```
+
 ## Merge old and new data
 
 ```{r merge dbs}
 
 # rename ids and add a column to separate new from old database
-new_data <- dd |> 
+new_db_data <- dd |> 
   rename(lat = ShootLat,
          lon = ShootLong,
          pred_weight = IndWgt) |>
@@ -462,15 +480,28 @@ new_data <- dd |>
   mutate(pred_ID = as.character(tblPredatorInformationID)) |>
   mutate(data_source = "new_db")
 
-old_data <- mm |> 
+old_db_data <- mm |> 
   rename(lat = Latitude,
          lon = Longitude) |>
   mutate(data_source = "old_db")
 
-comcol_newold_pred <- intersect(colnames(new_data), colnames(old_data))
+new_SE_data <- ll |>
+  rename(pred_ID = pred_id,
+         Year = year,
+         Depth = depth,
+         ICESrectangle = ices_rect) |>
+  select(-c(X, Y)) |>
+  mutate(data_source = "new_SE",
+         Month = as.character(month))
 
-bind_rows( new_data |> select(Year, pred_ID, data_source), 
-           old_data |> select(Year, pred_ID, data_source) ) |>
+new_SE_data$Day <- as.character(lubridate::yday(new_SE_data$date))
+
+comcol_newold_pred <- intersect( intersect(colnames(new_db_data), colnames(old_db_data)),
+                                 colnames(new_SE_data))
+
+bind_rows( new_db_data |> select(Year, pred_ID, data_source), 
+           old_db_data |> select(Year, pred_ID, data_source),
+           new_SE_data |> select(Year, pred_ID, data_source) ) |>
   group_by(Year, data_source) |>
   summarize(count = n()) |>
   ggplot() +
@@ -479,16 +510,17 @@ bind_rows( new_data |> select(Year, pred_ID, data_source),
   ylab("# stomachs")
 
 # Check if any of the two datasets have NA in the common columns. 
-unique(is.na(old_data |> dplyr::select(all_of(comcol_newold_pred)))) # depth and time are all NAs and HaulNO we dont need
-unique(is.na(new_data |> dplyr::select(all_of(comcol_newold_pred))))
+unique(is.na(old_db_data |> dplyr::select(all_of(comcol_newold_pred)))) # depth and time are all NAs and HaulNO we dont need
+unique(is.na(new_db_data |> dplyr::select(all_of(comcol_newold_pred))))
+unique(is.na(new_SE_data |> dplyr::select(all_of(comcol_newold_pred))))
 
 # remove Time, Depth, HaulNo
-newold <- full_join(old_data |> dplyr::select(-c(Time, Depth, HaulNo)), # join in predator data
-                    new_data |> dplyr::select(-c(Time, Depth, HaulNo)),
-                    by = comcol_newold_pred[!comcol_newold_pred %in% c("Time","Depth","HaulNo")])
+newold <- full_join( old_db_data |> dplyr::select(-c(Time, Depth, HaulNo)), # join in predator data
+                     new_db_data |> dplyr::select(-c(Time, Depth, HaulNo)),
+                     by = comcol_newold_pred[!comcol_newold_pred %in% c("Time","Depth","HaulNo")])  |>
+  full_join(new_SE_data, by = comcol_newold_pred[!comcol_newold_pred %in% c("Time","Depth","HaulNo")] )
 
 ```
-
 
 Now calculate feeding ratios of cod. 
 
@@ -543,7 +575,7 @@ Seems like fairly high proportions of cod without these key species in stomachs,
 df <- newold |> 
   rename(ices_rect = ICESrectangle) |> 
   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
-  dplyr::select(fr_sad, fr_spr, fr_her, fr_oth, fr_tot, Year, Month, Day, pred_weight, pred_length, saduria, sprat, herring, lat, lon, ices_rect, X, Y)#, depth)
+  dplyr::select(fr_sad, fr_spr, fr_her, fr_oth, fr_tot, Year, Month, pred_weight, pred_length, saduria, sprat, herring, lat, lon, ices_rect, X, Y)#, depth)
 
 # Add quarter
 # df <- df |> 
@@ -588,7 +620,8 @@ ggplot(df, aes(lon, lat, color = depth*-1)) +
 df$depth <- df$depth*-1
 
 # TODO: these coordinates are waaay off
-df <- df |> drop_na(depth)
+# This remoes 8349 rows
+df <- df |> drop_na(depth) 
 
 df |> 
   ggplot(aes(X*1000, Y*1000, color = depth)) + 
