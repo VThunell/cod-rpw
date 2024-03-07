@@ -191,7 +191,7 @@ ggplot(aes(Year, exp(coef.est))) +
   ylab("est for pred.length") 
 
 vis_Mod_dep <- visreg(Mod, xvar = "depth_sc", plot = TRUE)
-#tte
+
 ```
 
 ```{r predict on grid}
