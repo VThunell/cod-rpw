@@ -324,17 +324,31 @@ empty_stom <- pred |>
 dd <- agg_prey_summed |> 
   bind_rows(empty_stom)
 
-# Sweden and Denmark report in kg
+# Denmark report in kg
 ggplot(dd, aes(IndWgt)) + 
   facet_wrap(~Country, scales = "free") + 
   geom_histogram()
 
 dd <- dd |> 
-  mutate(IndWgt = ifelse(Country %in% c("DK", "SE"), IndWgt*1000, IndWgt))
+  mutate(IndWgt = ifelse(Country %in% c("DK"), IndWgt*1000, IndWgt))
 
 dd |> # Note the one data point in 1989
   ggplot(aes(IndWgt)) + 
   facet_wrap(~Year, scales = "free") +
+  geom_histogram()
+
+# Sweden report in mm
+dd |> # Note the one data point in 1989
+  ggplot(aes(pred_length)) + 
+  facet_wrap(~Country, scales = "free") +
+  geom_histogram()
+
+dd <- dd |> 
+  mutate(pred_length = ifelse(Country %in% c("SE"), pred_length/10, pred_length))
+
+dd |> # Note the one data point in 1989
+  ggplot(aes(pred_length)) + 
+  facet_wrap(~Country, scales = "free") +
   geom_histogram()
 
 # Yes, works as intended, see the added NAs in the selected prey weights. Make them 0!
@@ -349,7 +363,7 @@ dd <- dd |>
 # Remove non cod predators (e.g. Whiting 126438)
 dd <- dd |> filter(AphiaIDPredator %in% c(126436))
 
-ggplot(dd, aes(pred_length, IndWgt)) + # 0, negative or NAs weight ewith lengths
+ggplot(dd, aes(pred_length, IndWgt)) + # 0, negative or NAs weight with lengths
   geom_point()
 
 # Estimate predator weight if we have their length?
@@ -652,17 +666,17 @@ newold2 |>
   geom_histogram() +
   facet_wrap(~name, ncol = 1, scales = "free")
 
-quantile(newold2$fr_tot, 0.98) 
-
+quantile(newold2$fr_tot, 0.99) 
+# remove feeding ratios above the 99th percentile 
 newold3 <- newold2 |>
-  filter(between(fr_tot, 0, 0.2)) |>
-  filter(between(fr_spr, 0, 0.2)) |> 
-  filter(between(fr_her, 0, 0.2)) |> 
-  filter(between(fr_sad, 0, 0.2)) |> 
-  filter(between(fr_other, 0, 0.2)) |> 
-  filter(between(fr_other_invert, 0, 0.2)) |> 
-  filter(between(fr_other_fish, 0, 0.2)) |> 
-  filter(between(fr_benth_fish, 0, 0.2))
+  filter(between(fr_tot, 0, 0.33)) |>
+  filter(between(fr_spr, 0, 0.33)) |> 
+  filter(between(fr_her, 0, 0.33)) |> 
+  filter(between(fr_sad, 0, 0.33)) |> 
+  filter(between(fr_other, 0, 0.33)) |> 
+  filter(between(fr_other_invert, 0, 0.33)) |> 
+  filter(between(fr_other_fish, 0, 0.33)) |> 
+  filter(between(fr_benth_fish, 0, 0.33))
   
 newold3 |>
   select(fr_sad, fr_spr, fr_her, fr_tot, fr_other, fr_other_invert, fr_benth_fish, fr_other_fish) |> 
