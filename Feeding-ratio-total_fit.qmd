@@ -160,6 +160,7 @@ qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
 qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
 
 Mod
+tidy(Mod, effects = "ran_pars", conf.int=TRUE) 
 #saveRDS(Mod, file = paste0("fr-tot_Mod_",Sys.Date(),".rds"))
 
 ```
@@ -189,8 +190,108 @@ ggplot(aes(Year, exp(coef.est))) +
   scale_x_continuous(breaks = seq(min(df_tot$Year), max(df_tot$Year), by = 10)) +
   ylab("est for pred.length") 
 
-
+vis_Mod_dep <- visreg(Mod, xvar = "depth_sc", plot = TRUE)
+#tte
 ```
+
+```{r predict on grid}
+# make a prediction grid
+z <- chull(df_noz_doy_s$X, df_noz_doy_s$Y) # z are indices of the coordinates
+
+coords <- cbind(df_noz_doy_s$X[z], df_noz_doy_s$Y[z])
+coords <- rbind(coords, coords[1, ]) # To close the polygon?
+plot(coords[, 1] ~ coords[, 2]) # plot data
+
+sp_poly <- sp::SpatialPolygons( # hmmm Spatial polygons as a list of polygons as a list of a polygon 
+  list(sp::Polygons(list(sp::Polygon(coords)), ID = 1))
+  )
+
+sp_poly_df <- sp::SpatialPolygonsDataFrame(sp_poly,
+                                           data = data.frame(ID = 1)
+                                           )
+cell_width <- 3 # km?
+
+pred_grid <- expand.grid(
+  X = seq(min(df_noz_doy_s$X), max(df_noz_doy_s$X), cell_width),
+  Y = seq(min(df_noz_doy_s$Y), max(df_noz_doy_s$Y), cell_width),
+  year = c(1963:2021)
+  )
+
+ggplot(pred_grid |> filter(year == 2019), aes(X, Y)) +
+  geom_point(size = 0.1) +
+  theme_void() +
+  coord_sf()
+
+sp::coordinates(pred_grid) <- c("X", "Y") # solves issue on next line
+
+inside <- !is.na(sp::over(pred_grid, as(sp_poly_df, "SpatialPolygons"))) # why this
+
+pred_grid <- pred_grid[inside, ]
+
+pred_grid <- as.data.frame(pred_grid)
+
+ggplot(data = filter(pred_grid, year == 1999), aes(X*1000, Y*1000)) + 
+  geom_point(size = 0.001, alpha = 0.5) +
+  NULL
+
+plot_map +
+  geom_point(data = filter(pred_grid, year == 1999), aes(X*1000, Y*1000), size = 0.001, alpha = 0.5) +
+  NULL
+
+# Add lat and lon
+# Need to go from UTM to lat long for this one...
+# https://stackoverflow.com/questions/30018098/how-to-convert-utm-coordinates-to-lat-and-long-in-r
+xy <- as.matrix(pred_grid |> dplyr::select(X, Y) |> mutate(X = X*1000, Y = Y*1000))
+v <- vect(xy, crs="+proj=utm +zone=33 +datum=WGS84  +units=m")
+y <- project(v, "+proj=longlat +datum=WGS84")
+lonlat <- geom(y)[, c("x", "y")]
+
+pred_grid$lon <- lonlat[, 1]
+pred_grid$lat <- lonlat[, 2]
+
+ggplot(filter(pred_grid, year == 1999), aes(lon, lat)) + geom_point()
+
+# Add depth now to remove islands and remaining land
+# https://gis.stackexchange.com/questions/411261/read-multiple-layers-raster-from-ncdf-file-using-terra-package
+# https://emodnet.ec.europa.eu/geoviewer/
+dep_raster <- terra::rast(paste0(home, "/data/Mean depth natural colour (with land).nc"))
+class(dep_raster)
+crs(dep_raster, proj = TRUE)
+
+plot(dep_raster)
+
+pred_grid$depth <- terra::extract(dep_raster, pred_grid |> dplyr::select(lon, lat))$elevation
+
+ggplot(pred_grid, aes(lon, lat, color = depth*-1)) + 
+  geom_point()
+
+pred_grid$depth <- pred_grid$depth*-1 # why is depth negative
+
+pred_grid <- pred_grid |> drop_na(depth)
+
+pred_grid |> 
+  filter(year == 1999) |> 
+  drop_na(depth) |> 
+  #mutate(water = ifelse(depth < 0.00000001, "N", "Y")) |> 
+  ggplot(aes(X*1000, Y*1000, fill = depth)) + 
+  geom_raster() +
+  NULL
+
+plot_map + 
+  geom_point(data = pred_grid, aes(X*1000, Y*1000), size = 0.001) + 
+  geom_sf()
+
+plot_map + 
+  geom_raster(data = filter(pred_grid, year == 1999), aes(X*1000, Y*1000, fill = depth), size = 0.001) + 
+  geom_sf()
+```
+
+
+
+
+
+
+
 
 
 
