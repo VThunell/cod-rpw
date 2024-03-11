@@ -2,16 +2,18 @@ library(sf)
 # Packages not on CRAN
 # devtools::install_github("seananderson/ggsidekick") # not on CRAN 
 library(ggsidekick)
+library(rnaturalearth)
+library(rnaturalearthdata)
 
 theme_set(theme_sleek())
 
 sf::sf_use_s2(FALSE)
 
 # Specify map ranges
-ymin = 52; ymax = 60.5; xmin = 10; xmax = 24
+ymin = 52; ymax = 60.75; xmin = 10; xmax = 24
 
 map_data <- rnaturalearth::ne_countries(
-  scale = "medium",
+  scale = "large",
   returnclass = "sf", continent = "europe")
 
 # Crop the polygon for plotting and efficiency:
@@ -28,7 +30,6 @@ swe_coast_proj <- sf::st_transform(swe_coast, crs = utm_zone33)
 theme_facet_map <- function(base_size = 11, base_family = "") {
   theme_sleek(base_size = base_size, base_family = "") +
     theme(
-      axis.text.x = element_text(angle = 90),
       legend.direction = "horizontal",
       legend.margin = margin(1, 1, 1, 1),
       legend.box.margin = margin(0, 0, 0, 0),
@@ -40,12 +41,12 @@ theme_facet_map <- function(base_size = 11, base_family = "") {
 }
 
 # Make default base map plot
-xmin2 <- 303000
-xmax2 <- 916000
+xmin2 <- 380000
+xmax2 <- 810000
 xrange <- xmax2 - xmin2
 
-ymin2 <- 5980000
-ymax2 <- 6450000
+ymin2 <- 6100000
+ymax2 <- 6498000
 yrange <- ymax2 - ymin2
 
 plot_map <- 
@@ -58,6 +59,7 @@ plot_map <-
   guides(colour = guide_colorbar(title.position = "top", title.hjust = 0.5),
          fill = guide_colorbar(title.position = "top", title.hjust = 0.5)) +
   NULL
+
 
 plot_map_fc <- 
   ggplot(swe_coast_proj) + 
@@ -89,5 +91,3 @@ plot_map_labels_fc <-
   annotate("text", label = "Russia", x = xmin2 + 0.95*xrange, y = ymin2 + 0.18*yrange, color = "gray50", size = 1.9) +
   annotate("text", label = "Lithuania", x = xmin2 + 1*xrange, y = ymin2 + 0.43*yrange, color = "gray50", size = 1.9, angle = 75) +
   annotate("text", label = "Latvia", x = xmin2 + 0.99*xrange, y = ymin2 + 0.65*yrange, color = "gray50", size = 1.9, angle = 75)
-
-# Diet map plot here!

@@ -40,7 +40,7 @@ invisible(lapply(pkgs, library, character.only = T))
 # Source code for map plots
 # You need:
 # devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
- devtools::source_url("https://raw.githubusercontent.com/maxlindmark/pred-prey-overlap/main/R/functions/map-plot.R")
+devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
 options(ggplot2.continuous.colour = "viridis")
 #remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
 
@@ -56,7 +56,7 @@ home <- here::here()
 # qwraps2::lazyload_cache_dir(path = paste0(home, "/R/main-analysis/03-fit-diet-models_cache/html"))
 ```
 
-## Read stomach data
+## Read stomach data and prediction grid
 
 ```{r}
 #| message: false
@@ -71,13 +71,16 @@ df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
          other_sc = (other - mean(other))/sd(other),
          other_fish_sc = (other_fish - mean(other_fish))/sd(other_fish),
          benth_fish_sc = (benth_fish - mean(benth_fish))/sd(benth_fish),
-         Year_f = as.factor(Year),
-         month_f = as.factor(Month),
+         year_f = as.factor(year),
+         month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
-         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
+         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length)
 ) 
 
 glimpse(df)
+
+pred_grid <- bind_rows(read_csv(paste0(home, "/data/clean/pred_grid_(1_2).csv")),
+                       read_csv(paste0(home, "/data/clean/pred_grid_(2_2).csv")))
 
 ```
 
@@ -86,7 +89,7 @@ glimpse(df)
 
 ```{r}
 
-# remove empty stomachs and day of Year that are NA
+# remove empty stomachs and day of year that are NA
 df_tot <- df |>
  filter( fr_tot > 0 ) |>
  filter( !is.na(day_of_year) ) |>
@@ -96,16 +99,16 @@ df_tot <- df |>
 # mesh
 mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
  
-# reduce number of Years to reduce fitting time
-# df_tot_sel <- df_tot |> filter( Year %in% c(2012:2022))
+# reduce number of years to reduce fitting time
+# df_tot_sel <- df_tot |> filter( year %in% c(2012:2022))
 # mesh_tot_sel <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
 
-# missing Years
-my <- min(df_tot$Year):max(df_tot$Year)
-missing_Years <- my[!my %in% unique(df_tot$Year)]
+# missing years
+my <- min(df_tot$year):max(df_tot$year)
+missing_years <- my[!my %in% unique(df_tot$year)]
 
 df_tot |>
-  ggplot(aes(pred_length,fr_tot, color = Year)) +
+  ggplot(aes(pred_length,fr_tot, color = year)) +
   geom_point()
 
 ```
@@ -114,17 +117,17 @@ df_tot |>
 
 ```{r}
 df_tot |> 
-  group_by(Year) |> 
+  group_by(year) |> 
   summarise(mean_fr_tot = mean(fr_tot),
             sd_fr_tot = sd(fr_tot)) |>
-  ggplot(aes(Year, mean_fr_tot)) +
+  ggplot(aes(year, mean_fr_tot)) +
   geom_line() +
   geom_ribbon(aes(ymin = mean_fr_tot - sd_fr_tot, ymax = mean_fr_tot + sd_fr_tot), alpha = 0.3) +
-  scale_x_continuous(breaks = seq(min(df_tot$Year), max(df_tot$Year), by = 10)) 
+  scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) 
 
 df_tot |> 
-  filter(Year %in% seq(1982,2022, by = 10)) |>
-  ggplot(aes(pred_length, fr_tot, color = Year))  +
+  filter(year %in% seq(1970,2020, by = 10)) |>
+  ggplot(aes(pred_length, fr_tot, color = year))  +
   geom_point() +
   stat_smooth(method = "gam", formula = y ~ s(x, k=3))
 ```
@@ -132,478 +135,541 @@ df_tot |>
 
 ```{r fit M1 and 2}
 
-time <- Sys.time()
+# time <- Sys.time()
+# 
+# Mod <- 
+#   sdmTMB(
+#   data = df_tot,
+#   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+#   time_varying = ~ 1 + pred_length_sc,
+#   extra_time = missing_years,
+#   time = "year", 
+#   mesh = mesh_tot,
+#   spatial = "on",
+#   spatiotemporal = "ar1",
+#   family = Gamma(link = "log")
+# )
+# 
+# Sys.time() - time 
 
-Mod <- 
+# without spatial and spatiotemporal it takes 14 sec. Spatial model takes 20 sec. AR1 spatiotemporal model takes 4 hours.
+
+Mod_s <- 
   sdmTMB(
   data = df_tot,
   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
   time_varying = ~ 1 + pred_length_sc,
-  extra_time = missing_Years,
-  time = "Year", 
+  extra_time = missing_years,
+  time = "year", 
   mesh = mesh_tot,
   spatial = "on",
-  spatiotemporal = "ar1",
-  family = Gamma(link = "log"),
+  spatiotemporal = "off",
+  family = Gamma(link = "log")
 )
 
-Sys.time() - time 
-# without spatial and spatiotemporal it takes 14 sec. Spatial model takes 20 sec. AR1 spatiotemporal model takes
+Mod_n <- 
+  sdmTMB(
+  data = df_tot,
+  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+  time_varying = ~ 1 + pred_length_sc,
+  extra_time = missing_years,
+  time = "year", 
+  mesh = mesh_tot,
+  spatial = "off",
+  spatiotemporal = "off",
+  family = Gamma(link = "log")
+)
+
 
 sanity(Mod)
 
+qqnorm(residuals(Mod_n))
+qqline(residuals(Mod_n))
+qqnorm(residuals(Mod_s))
+qqline(residuals(Mod_s))
 qqnorm(residuals(Mod))
 qqline(residuals(Mod))
 # space_res_ln <- mcmc_res <- residuals(tot_space_ln, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(tot_space_ln, mcmc_iter = 201, mcmc_warmup = 200))
+
+AIC(Mod_n)
+AIC(Mod_s)
+AIC(Mod)
+#saveRDS(Mod, file = paste0("fr-tot_Mod_ar1",Sys.Date(),".rds"))
+#Mod <- readRDS(Mod, file = paste0("fr-tot_Mod_ar1",Sys.Date(),".rds"))
 Mod_res <- sdmTMBextra::predict_mle_mcmc(Mod, mcmc_warmup = 200, mcmc_iter = 201)
 qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
 qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
-
-Mod
 tidy(Mod, effects = "ran_pars", conf.int=TRUE) 
-#saveRDS(Mod, file = paste0("fr-tot_Mod_",Sys.Date(),".rds"))
 
 ```
 
 ```{r plot coefficients for Mod}
 
-# Coefficient estimate of Year
+# Coefficient estimate of year
 Mod_tv_est <- as.list(Mod$sd_report, "Estimate")
 Mod_tv_se <- as.list(Mod$sd_report, "Std. Error")
 
-y_Mod <- data.frame(Year = sort(unique(Mod$data$Year)), coef.est = Mod_tv_est$b_rw_t[,1,], coef.se = Mod_tv_se$b_rw_t[,1,])
+Mod_s_tv_est <- as.list(Mod_s$sd_report, "Estimate")
+Mod_s_tv_se <- as.list(Mod_s$sd_report, "Std. Error")
 
-y_Mod |>
-  ggplot(aes(Year, exp(coef.est))) +
+Mod_n_tv_est <- as.list(Mod_n$sd_report, "Estimate")
+Mod_n_tv_se <- as.list(Mod_n$sd_report, "Std. Error")
+
+y_n_Mod <- data.frame(year = sort(unique(Mod_n$data$year)), coef.est = Mod_n_tv_est$b_rw_t[,1,], coef.se = Mod_n_tv_se$b_rw_t[,1,], model = "nos")
+y_s_Mod <- data.frame(year = sort(unique(Mod_s$data$year)), coef.est = Mod_s_tv_est$b_rw_t[,1,], coef.se = Mod_s_tv_se$b_rw_t[,1,], model = "spatial")
+y_Mod <- data.frame(year = sort(unique(Mod$data$Year)), coef.est = Mod_tv_est$b_rw_t[,1,], coef.se = Mod_tv_se$b_rw_t[,1,], model = "spatiotemporal")
+
+bind_rows(y_Mod, y_s_Mod, y_n_Mod) |>
+  ggplot(aes(year, exp(coef.est), color = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) +
-  scale_x_continuous(breaks = seq(min(df_tot$Year), max(df_tot$Year), by = 10)) +
-  ylab("est for year") # the cf gets very large for the missing Year
+  #geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) +
+  scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
+  ylab("est for year") # the cf gets very large for the missing year
 
-# Coefficient of length varying with Year
-ypl_Mod <- data.frame(Year = sort(unique(Mod$data$Year)), coef.est = Mod_tv_est$b_rw_t[,2,], coef.se = Mod_tv_se$b_rw_t[,2,])
+# Coefficient of length varying with year
+ypl_Mod <- data.frame(year = sort(unique(Mod$data$year)), coef.est = Mod_tv_est$b_rw_t[,2,], coef.se = Mod_tv_se$b_rw_t[,2,])
 
 ypl_Mod |>
-ggplot(aes(Year, exp(coef.est))) +
+ggplot(aes(year, exp(coef.est))) +
   geom_line() +
   geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) +
-  scale_x_continuous(breaks = seq(min(df_tot$Year), max(df_tot$Year), by = 10)) +
+  scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
   ylab("est for pred.length") 
 
-vis_Mod_dep <- visreg(Mod, xvar = "depth_sc", plot = TRUE)
-
-```
-
-```{r predict on grid}
-# make a prediction grid
-z <- chull(df_noz_doy_s$X, df_noz_doy_s$Y) # z are indices of the coordinates
-
-coords <- cbind(df_noz_doy_s$X[z], df_noz_doy_s$Y[z])
-coords <- rbind(coords, coords[1, ]) # To close the polygon?
-plot(coords[, 1] ~ coords[, 2]) # plot data
-
-sp_poly <- sp::SpatialPolygons( # hmmm Spatial polygons as a list of polygons as a list of a polygon 
-  list(sp::Polygons(list(sp::Polygon(coords)), ID = 1))
-  )
-
-sp_poly_df <- sp::SpatialPolygonsDataFrame(sp_poly,
-                                           data = data.frame(ID = 1)
-                                           )
-cell_width <- 3 # km?
-
-pred_grid <- expand.grid(
-  X = seq(min(df_noz_doy_s$X), max(df_noz_doy_s$X), cell_width),
-  Y = seq(min(df_noz_doy_s$Y), max(df_noz_doy_s$Y), cell_width),
-  year = c(1963:2021)
-  )
-
-ggplot(pred_grid |> filter(year == 2019), aes(X, Y)) +
-  geom_point(size = 0.1) +
-  theme_void() +
-  coord_sf()
-
-sp::coordinates(pred_grid) <- c("X", "Y") # solves issue on next line
-
-inside <- !is.na(sp::over(pred_grid, as(sp_poly_df, "SpatialPolygons"))) # why this
-
-pred_grid <- pred_grid[inside, ]
-
-pred_grid <- as.data.frame(pred_grid)
-
-ggplot(data = filter(pred_grid, year == 1999), aes(X*1000, Y*1000)) + 
-  geom_point(size = 0.001, alpha = 0.5) +
-  NULL
-
-plot_map +
-  geom_point(data = filter(pred_grid, year == 1999), aes(X*1000, Y*1000), size = 0.001, alpha = 0.5) +
-  NULL
-
-# Add lat and lon
-# Need to go from UTM to lat long for this one...
-# https://stackoverflow.com/questions/30018098/how-to-convert-utm-coordinates-to-lat-and-long-in-r
-xy <- as.matrix(pred_grid |> dplyr::select(X, Y) |> mutate(X = X*1000, Y = Y*1000))
-v <- vect(xy, crs="+proj=utm +zone=33 +datum=WGS84  +units=m")
-y <- project(v, "+proj=longlat +datum=WGS84")
-lonlat <- geom(y)[, c("x", "y")]
-
-pred_grid$lon <- lonlat[, 1]
-pred_grid$lat <- lonlat[, 2]
-
-ggplot(filter(pred_grid, year == 1999), aes(lon, lat)) + geom_point()
-
-# Add depth now to remove islands and remaining land
-# https://gis.stackexchange.com/questions/411261/read-multiple-layers-raster-from-ncdf-file-using-terra-package
-# https://emodnet.ec.europa.eu/geoviewer/
-dep_raster <- terra::rast(paste0(home, "/data/Mean depth natural colour (with land).nc"))
-class(dep_raster)
-crs(dep_raster, proj = TRUE)
-
-plot(dep_raster)
-
-pred_grid$depth <- terra::extract(dep_raster, pred_grid |> dplyr::select(lon, lat))$elevation
-
-ggplot(pred_grid, aes(lon, lat, color = depth*-1)) + 
-  geom_point()
-
-pred_grid$depth <- pred_grid$depth*-1 # why is depth negative
-
-pred_grid <- pred_grid |> drop_na(depth)
-
-pred_grid |> 
-  filter(year == 1999) |> 
-  drop_na(depth) |> 
-  #mutate(water = ifelse(depth < 0.00000001, "N", "Y")) |> 
-  ggplot(aes(X*1000, Y*1000, fill = depth)) + 
-  geom_raster() +
-  NULL
-
-plot_map + 
-  geom_point(data = pred_grid, aes(X*1000, Y*1000), size = 0.001) + 
-  geom_sf()
-
-plot_map + 
-  geom_raster(data = filter(pred_grid, year == 1999), aes(X*1000, Y*1000, fill = depth), size = 0.001) + 
-  geom_sf()
-```
-
-
-
-
-
-
-
-
-
-
-## Model alterantives to M1 and M2
-
-```{r Model}
-
-M3a1 <- # factor Year * pred_length, skip time varying and missing Years
-  sdmTMB(
-  data = df_noz_doy_sel,
-  formula = fr_tot ~ 0 + factor(Year) * pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
-  #time_varying = ~ 1 + pred_length_sc, 
-  #extra_time = missing_Years, 
-  #time = "Year", 
-  mesh = mesh_nozdoy_sel,
-  spatial = "off",
-  family = Gamma(link = "log"),
-)
-
-M3a2 <- # pred_length * factor Year, skip time varying and missing Years
-  sdmTMB(
-  data = df_noz_doy_sel,
-  formula = fr_tot ~ 0 + pred_length_sc * factor(Year) + s(doy_sc, bs = "cc") + depth_sc, 
-  #time_varying = ~ 1 + pred_length_sc, 
-  #extra_time = missing_Years, 
-  #time = "Year", 
-  mesh = mesh_nozdoy_sel,
-  spatial = "off",
-  family = Gamma(link = "log"),
-)
-
-M3b <-  # smooth on length (k = 3) by Year. Warning: NA/NaN function evaluationWarning: NA/NaN function evaluationWarning: The model may not have converged: non-positive-definite Hessian matrix.
-  sdmTMB(
-  data = df_noz_doy_sel,
-  formula = fr_tot ~ 0 + factor(Year) + s(doy_sc, bs = "cc") + depth_sc + s(pred_length_sc, k = 3, by = Year), 
-  #time_varying = ~ 1,
-  #extra_time = missing_Years, 
-  #time = "Year", 
-  mesh = mesh_nozdoy_sel,
-  spatial = "off",
-  family = Gamma(link = "log"),
-)
-
-M3c <-  # mean as random factor instead of fixed
-  sdmTMB(
-  data = df_noz_doy_sel,
-  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc + (0|Year_f), 
-  time_varying = ~ 0 + pred_length_sc,
-  extra_time = missing_Years, 
-  time = "Year", 
-  mesh = mesh_nozdoy_sel,
-  spatial = "off", # It still fits a spatial model
-  family = Gamma(link = "log"),
-)
-
-# The interaction with a smooth effect seemingly does'nt work. This prevents the model from finding Year.
-# M3d <- # factor Year * s(pred_length, k = 4). 
-#   sdmTMB(
-#   data = df_noz_doy_sel_M2,
-#   formula = fr_tot ~ factor(Year) * s(pred_length_sc, k = 4) + s(doy_sc, bs = "cc") + depth_sc, 
-#   #time_varying = ~ 1 + pred_length_sc, 
-#   #extra_time = missing_Years, 
-#   #time = "Year", 
-#   mesh = mesh_nozdoy_sel_M2,
-#   spatial = "on",
-#   family = Gamma(link = "log"),
-# )
-
-sanity(M3a1) 
-sanity(M3b) 
-sanity(M3c)
-
-qqnorm(residuals(M3a1))
-qqline(residuals(M3a1))
-qqnorm(residuals(M3c))
-qqline(residuals(M3c))
-
-# Only a and c left for comparison
-M3a1
-M3b # Warning: Smoother fixed effect matrix names could not be retrieved. Thi smakes the smoother effect 
-M3c
 
 ```
 
 
+```{r predictions year}
 
-```{r plot M3 models}
+# Predict on grid, for indices and maps
+nd_pred_grid <- pred_grid |>
+  #filter(!year == 2022 ) |>
+  #rename(Year = year) |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         doy_sc = 0,
+         pred_length_sc = 0)
 
-# estimates for Year effects
-M3a1_est <- tidy(M3a1, effects = "fixed", conf.int = TRUE)$estimate
-M3a1_se <- tidy(M3a1, effects = "fixed", conf.int = TRUE)$std.error
+time <- Sys.time()
+# return_tmb_object = TRUE,  #returns a report from TMB in the output
+pred_Mod <- predict(Mod, newdata = nd_pred_grid, return_tmb_object = TRUE) # måste ha TRUE här!!
+Sys.time() - time
 
-y_M3a <- data.frame(Year = sort(unique(M3a1$data$Year)), coef.est = M3a1_est[1:39], coef.se = M3a1_se[1:39], model = "M3a")
-y_M3c <- data.frame(Year = sort(unique(df_noz_doy_sel$Year)), coef.est = tidy(M3c, effects = "ran_vals", conf.int = TRUE)$estimate, coef.se = tidy(M3c, effects = "ran_vals", conf.int = TRUE)$std.error, model = "M3c")
+time <- Sys.time()
+pred_Mod_s <- predict(Mod, newdata = nd_pred_grid, nsim = 250) # måste ha TRUE här!!
 
-y_M3a$model = "M3a"
-y_M3c$model = "M3c"
-y_M3 <- bind_rows(y_M3a,y_M3c)
+Sys.time() - time
 
-# Conditional effect of Year. Cant predict over Year when it is a random effect somehow
-# nd_M3a_Year <- data.frame(Year = sort(unique(M3a$data$Year)), depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
-# nd_M3c_Year <- data.frame(Year = sort(unique(M3c$data$Year)), depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
-# p_M3a_Year <- predict(M3a, newdata = nd_M3a_Year, re_form = NA, se_fit = TRUE)
-# p_M3c_Year <- predict(M3c, newdata = nd_M3c_Year, re_form = NA, se_fit = TRUE) # cant predict over Year...
+# Make temporal index!
+ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
 
-# Predator length effects varying with Year
-# M3a
-ypl_M3a1 <- data.frame(Year = sort(unique(M3a1$data$Year)), coef.est = c(M3a1_est[1] + M3a1_est[40], M3a1_est[1] + M3a1_est[40] + M3a1_est[42:79]), coef.se = c(M3a1_se[1], M3a1_se[42:79]), model = "M3a1")
+time <- Sys.time()
+index_tot <- get_index(pred_Mod, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
+Sys.time() - time
 
-M3a2_est <- tidy(M3a2, effects = "fixed", conf.int = TRUE)$estimate
-ypl_M3a2 <- data.frame(Year = sort(unique(M3a2$data$Year)), coef.est = c(M3a2_est[1] + M3a2_est[2], M3a2_est[1] + M3a2_est[2] + M3a2_est[42:79]), model = "M3a2")
+time <- Sys.time()
+index_tot_s <- get_index_sims(pred_Mod_s, area = rep(1/ncells, nrow(pred_Mod_s)))
+Sys.time() - time
 
-ypl_comp_M3a <- bind_rows(ypl_M3a1[,c(1,2,4)], ypl_M3a2)
+Mod_res <- sdmTMBextra::predict_mle_mcmc(Mod, mcmc_warmup = 200, mcmc_iter = 201)
+qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
+qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
 
-# M3c 
-pl_M3c <- as.list(M3c$sd_report, "Estimate")
-pls_M3c <- as.list(M3c$sd_report, "Std. Error")
-M3c_est <- tidy(M3c, effects = "ran_vals", conf.int = TRUE)$estimate # random Year effect 
-M3c_se <- tidy(M3c, effects = "ran_vals", conf.int = TRUE)$std.error
+```
 
-ypl_M3c <- data.frame(Year = seq(min(df_noz_doy_sel$Year), max(df_noz_doy_sel$Year)), coef.est = M3c_est[1] + pl_M3c$b_rw_t, coef.se = pls_M3c$b_rw_t, model = "M3c")
+```{r plot predictions year}
+bind_rows(index_tot |> mutate(method = "regular"),
+          index_tot_s |> mutate(method = "simul"))  |> 
+  ggplot(aes(year, est, fill = method)) +
+  geom_point(shape = 21, alpha = 0.7) +
+  #scale_fill_manual(values = c("white", "grey10")) +
+  facet_wrap(~method, scales = "fixed") + 
+  geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0) 
+```
+```{r predictions pred length}
 
-# plot comparison of M3a1 and 2 of the effect of pred length varying with year
-ypl_comp_M3a |>
-  ggplot(aes(Year, exp(coef.est), color = model, linetype = model)) +
+# Predict on grid, for indices and maps
+nd_sm_pred_grid <- pred_grid |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         doy_sc = 0,
+         pred_length_sc = (15 - mean(df$pred_length))/sd(df$pred_length))
+nd_la_pred_grid <- pred_grid |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         doy_sc = 0,
+         pred_length_sc = (55 - mean(df$pred_length))/sd(df$pred_length))
+
+pred_Mod_sm <- predict(Mod_s, newdata = nd_sm_pred_grid, return_tmb_object = TRUE)
+pred_Mod_la <- predict(Mod_s, newdata = nd_la_pred_grid, return_tmb_object = TRUE)
+
+# Make temporal index!
+ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
+
+index_tot_sm <- get_index(pred_Mod_sm, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
+index_tot_la <- get_index(pred_Mod_la, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
+#index_tot <- get_index(pred_Mod, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
+
+bind_rows(index_tot_sm |> mutate(length = "15"),
+          index_tot |> mutate(length = "36, mean"),
+          index_tot_la |> mutate(length = "55"))  |> 
+  ggplot(aes(year, est, color = length)) +
   geom_line() +
-  ggtitle(" order of interactive terms (a*b vs b*a) makes no difference")
-
-# plot Year coef for a and c
-y_M3 |>
-  ggplot(aes(Year, exp(coef.est), color = model)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) +
-  scale_x_continuous(breaks = seq(min(df_noz_doy_sel$Year), max(df_noz_doy_sel$Year), by = 20)) +
-  ylab("random estimate of Year")
-
-# compare M3a and c of the effect if pred length varying with year
-bind_rows(ypl_M3c, ypl_M3a1) |>
-  ggplot(aes(Year, exp(coef.est), color = model)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) +
-  scale_x_continuous(breaks = seq(min(df_noz_doy_sel$Year), max(df_noz_doy_sel$Year), by = 10)) +
-  ylab("est for pred.length") 
+  #geom_ribbon(aes(ymin = lwr, ymax = upr, alpha = 0.3)) +
+  #scale_fill_manual(values = c("white", "grey10")) +
+  scale_x_continuous(breaks = seq(min(index_tot$year), max(index_tot$year), by = 10)) + 
+  ggtitle("predicted est (not simulated)")
+  #facet_wrap(~method, scales = "fixed") + 
+  geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0) 
 
 ```
+<!-- ```{r plot prediction} -->
+<!-- # Plot all together -->
+<!-- index_comp_sim <- bind_rows(#index_avg_sim_re %>% mutate(Prediction = "Random & Fixed effects (no yr)"), -->
+<!--                             index_avg_sim_fe %>% mutate(Prediction = "Fixed effects (no yr)"), -->
+<!--                             index_avg_sim %>% mutate(Prediction = "Full")) -->
 
-In the plots above, M3a has the intercept for the first year (1982) and the fixed effect of pred_length_sc added to the interaction effect of year and pred_length_sc. M3c has the random effect of year added to the effect of predator length varying with year but no overall effect of predator length. This is a bit odd as the predator length effect is large (est 0.4) in M3a. What am I missing..
+<!-- index_comp_sims <- bind_rows(#index_avg_sims_re %>% mutate(Prediction = "Random & Fixed effects (no yr)"), -->
+<!--                              index_avg_sims_fe %>% mutate(Prediction = "Fixed effects (no yr)"), -->
+<!--                              index_avg_sims %>% mutate(Prediction = "Full")) %>% -->
+<!--   filter(.iteration < 26) -->
 
-```{r}
-# Compare M3 with M1 and 2
+<!-- ggplot(index_comp_sim, aes(year, est, ymin = lwr, ymax = upr, color = Prediction, fill = Prediction)) + -->
+<!--   geom_ribbon(alpha = 0.2, color = NA) + -->
+<!--   geom_line(size = 1) +  -->
+<!--   geom_line(data = filter(index_comp_sims, .iteration < 26), -->
+<!--             aes(year, est, group = interaction(.iteration, Prediction), color = Prediction), inherit.aes = FALSE, alpha = 0.3) + -->
+<!--   NULL -->
+<!-- ``` -->
+<!-- ``` -->
 
-bind_rows(ypl_M3a1,ypl_M3c) |>
-bind_rows(ypl_M12) |>
-  ggplot(aes(Year, exp(coef.est), color = model, linetype = model)) +
-  geom_line() +
-  scale_x_continuous(breaks = seq(min(df_noz_doy_sel$Year), max(df_noz_doy_sel$Year), by = 10)) +
-  ylab("est for pred.length")
-```
+<!-- ```{r predictions} -->
+<!-- # Conditional effect of year -->
+<!-- nd_Y <- data.frame(year = seq(1963: max(df_noz_doy_sel$year), by ), depth_sc = 0, pred_length_sc = 0, doy_sc = 0) -->
 
-The intercepts may be different...
+<!-- p_M1_year <- predict(M1, newdata = nd_year, re_form = NA, se_fit = TRUE) -->
+<!-- p_M2_year <- predict(M2, newdata = nd_year, re_form = NA, se_fit = TRUE) -->
 
-```{r}
+<!-- p_M1_year$model = "M1" -->
+<!-- p_M2_year$model = "M2" -->
 
-# M1
-# formula = fr_tot ~ 0 + as.factor(Year) + s(doy_sc, bs = "cc") + depth_sc, 
-#   time_varying = ~ 0 + pred_length_sc, # implies time varying random walk intercept 
-# M2
-# formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
-#   time_varying = ~ 1 + pred_length_sc,
-# M3a 
-# formula = fr_tot ~ 0 + factor(Year) * pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
-# M3c
-# formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc + (0|Year_f), 
-#   time_varying = ~ 0 + pred_length_sc,
-
-# I remove the year intercepts, i.e. 1982 for M3a (but keep the predator length effect) and the random year effect for M3c..
-# ypl_M3a1 <- data.frame(Year = sort(unique(M3a1$data$Year)), coef.est = c(M3a1_est[1] + M3a1_est[40], M3a1_est[1] + M3a1_est[40] + M3a1_est[42:79]), coef.se = c(M3a1_se[1], M3a1_se[42:79]), model = "M3a1")
-ypl_M3aa   <- data.frame(Year = sort(unique(M3a1$data$Year)), coef.est = c(M3a1_est[40], M3a1_est[40] + M3a1_est[42:79]), coef.se = c(M3a1_se[1], M3a1_se[42:79]), model = "M3a1")
-
-# ypl_M3c <- data.frame(Year = seq(min(df_noz_doy_sel$Year), max(df_noz_doy_sel$Year)), coef.est = M3c_est[1] + pl_M3c$b_rw_t, coef.se = pls_M3c$b_rw_t, model = "M3c")
-ypl_M3cc <- data.frame(Year = seq(min(df_noz_doy_sel$Year), max(df_noz_doy_sel$Year)), coef.est = pl_M3c$b_rw_t, coef.se = pls_M3c$b_rw_t, model = "M3c")
-
-bind_rows(ypl_M3aa,ypl_M3cc) |>
-bind_rows(ypl_M12) |>
-  ggplot(aes(Year, exp(coef.est), color = model, linetype = model)) +
-  geom_line() +
-  scale_x_continuous(breaks = seq(min(df_noz_doy_sel$Year), max(df_noz_doy_sel$Year), by = 10)) +
-  ylab("est for pred.length") 
-
-```
-By removing the year intercepts, i.e. 1982 for M3a and the random year effect for M3c, we get the coeffcients for the effects of predator length varying with year on the same scale as M1 and M2. 
-
-## Summary
-
- * M3a - Specifying pred_length_sc$*$factor(Year) or factor(Year)$*$pred_length_sc doesn't matter. A fixed effect interactiopn makes for somewhat different coefficient estimates for predator length over year compared to having this effect in time_varying. 
- * M3b - The effect of a smoother on predator length varying with Year (i.e. by = Year) cannot be estimated by the model( " Smoother fixed effect matrix names could not be retrieved"). The smoother term can't be put on time_varying (the function doesn't recognize the s() function). There are more issue with the model (see above) and we need to look into this if we want to do this model.I've dropped this option. 
- * M3c - year as a randoom effect instead of a time_varying intercept makes small differences.  
- * M3d - An interaction between Year and a smooth effect on pred_length_sc seemingly doesn't work. This prevents sdmTMB from finding Year. Therefore I've dropped this option.
-
-Independent of model structure, the models mantain the same estimate for the predator length effects varying over Year. The Year effect may differ however 
-
-*I also NOTEd that, if time_varying is on but spatial is off, it fits a spatial model and asks for xy coordinates when I use predict()*.
+<!-- ``` -->
 
 
-## Appendix 1. Variation and time_varying intercepts vs fixed factor year
-```{r}
-# Pred length i fixed effect. test på 10 år. Om m2 smoothen är, t_v contra fator år har lite skilllnad men här har vi. Intercpetrn er . testa genom längs om en fixe deefkt om tv fixed ekfkket kan fånaga annual fluctuatio
 
-# M1 varies but not M2
-Mtesta <- 
-  sdmTMB(
-  data = df_noz_doy_sel |> filter(Year_f %in% 2012:2022),
-  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
-  time_varying = ~ 1 + pred_length_sc,
-  time = "Year", # for spatiotemporal and time_varying
-  #mesh = mesh_nozdoy_sel,
-  spatiotemporal = "off",
-  spatial = "off",
-  family = Gamma(link = "log"),
-)
 
-Mtestb <- 
-  sdmTMB(
-  data = df_noz_doy_sel |> filter(Year_f %in% 2012:2022),
-  formula = fr_tot ~ 0 + Year_f + s(doy_sc, bs = "cc") + depth_sc, 
-  time_varying = ~ 0 + pred_length_sc,
-  #extra_time = missing_Years, # to fill in empty Years
-  time = "Year", # for spatiotemporal and time_varying
-  #mesh = mesh_nozdoy_sel,
-  spatial = "off",
-  spatiotemporal = "off",
-  family = Gamma(link = "log"),
-)
 
-Mtestc <- 
-  sdmTMB(
-  data = df_noz_doy_sel |> filter(Year_f %in% 2012:2022),
-  formula = fr_tot ~ 0 + pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
-  time_varying = ~ 1,
-  #extra_time = missing_Years, # to fill in empty Years
-  time = "Year", # for spatiotemporal and time_varying
-  #mesh = mesh_nozdoy_sel,
-  spatial = "off",
-  spatiotemporal = "off",
-  family = Gamma(link = "log"),
-)
-Mtestd <- 
-  sdmTMB(
-  data = df_noz_doy_sel |> filter(Year_f %in% 2012:2022),
-  formula = fr_tot ~ 0 + Year_f + pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
-  time_varying = ~ 0,
-  time = "Year", # for spatiotemporal and time_varying
-  #mesh = mesh_nozdoy_sel,
-  spatiotemporal = "off",
-  spatial = "off",
-  family = Gamma(link = "log"),
-)
 
-nd_Year <- data.frame(Year = Mtesta$data$Year, depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
-p_Mtesta_Year <- predict(Mtesta, newdata = nd_Year, re_form = NA, se_fit = TRUE)
 
-nd_Year <- data.frame(Year = Mtestb$data$Year, Year_f = Mtestb$data$Year_f, depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
-p_Mtestb_Year <- predict(Mtestb, newdata = nd_Year, re_form = NA, se_fit = TRUE)
 
-nd_Year <- data.frame(Year = Mtestc$data$Year, depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
-p_Mtestc_Year <- predict(Mtestc, newdata = nd_Year, re_form = NA, se_fit = TRUE)
 
-nd_Year <- data.frame(Year = Mtestd$data$Year, Year_f = Mtestd$data$Year_f, depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
-p_Mtestd_Year <- predict(Mtestd, newdata = nd_Year, re_form = NA, se_fit = TRUE)
+<!-- ## Model alterantives to M1 and M2 -->
 
-p_Mtesta_Year$model = "a"
-p_Mtestb_Year$model = "b"
-p_Mtestc_Year$model = "c"
-p_Mtestd_Year$model = "d"
+<!-- ```{r Model} -->
 
-p_Year <- bind_rows(p_Mtesta_Year, p_Mtestb_Year,p_Mtestc_Year, p_Mtestd_Year)
+<!-- M3a1 <- # factor year * pred_length, skip time varying and missing years -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel, -->
+<!--   formula = fr_tot ~ 0 + factor(year) * pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!--   #time_varying = ~ 1 + pred_length_sc,  -->
+<!--   #extra_time = missing_years,  -->
+<!--   #time = "year",  -->
+<!--   mesh = mesh_nozdoy_sel, -->
+<!--   spatial = "off", -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
 
-p_Year |>
-  ggplot(aes(Year, exp(est), color = model)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = exp(est-1.96*est_se), ymax = exp(est+1.96*est_se)), alpha = 0.1) +
-  scale_x_continuous(breaks = seq(min(df_noz_doy_sel$Year), max(df_noz_doy_sel$Year), by = 10)) +
-  ylab("prediction for year")
-```
+<!-- M3a2 <- # pred_length * factor year, skip time varying and missing years -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel, -->
+<!--   formula = fr_tot ~ 0 + pred_length_sc * factor(year) + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!--   #time_varying = ~ 1 + pred_length_sc,  -->
+<!--   #extra_time = missing_years,  -->
+<!--   #time = "year",  -->
+<!--   mesh = mesh_nozdoy_sel, -->
+<!--   spatial = "off", -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
 
-## Appendix 2. Model with a smoother on length
+<!-- M3b <-  # smooth on length (k = 3) by year. Warning: NA/NaN function evaluationWarning: NA/NaN function evaluationWarning: The model may not have converged: non-positive-definite Hessian matrix. -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel, -->
+<!--   formula = fr_tot ~ 0 + factor(year) + s(doy_sc, bs = "cc") + depth_sc + s(pred_length_sc, k = 3, by = year),  -->
+<!--   #time_varying = ~ 1, -->
+<!--   #extra_time = missing_years,  -->
+<!--   #time = "year",  -->
+<!--   mesh = mesh_nozdoy_sel, -->
+<!--   spatial = "off", -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
 
-This causes issues that I so far havent figured out how to solve
+<!-- M3c <-  # mean as random factor instead of fixed -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel, -->
+<!--   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc + (0|year_f),  -->
+<!--   time_varying = ~ 0 + pred_length_sc, -->
+<!--   extra_time = missing_years,  -->
+<!--   time = "year",  -->
+<!--   mesh = mesh_nozdoy_sel, -->
+<!--   spatial = "off", # It still fits a spatial model -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
 
-```{r}
-M0 <-
-  sdmTMB(
-  data = df_noz_doy_sel |> filter(Year > 2012),
-  formula = fr_tot ~ 0 + Year_f + s(pred_length_sc, m = 2, by = Year_f) + depth_sc, 
-  spatiotemporal = "off",
-  spatial = "off",
-  family = Gamma(link = "log"),
-)
+<!-- # The interaction with a smooth effect seemingly does'nt work. This prevents the model from finding year. -->
+<!-- # M3d <- # factor year * s(pred_length, k = 4).  -->
+<!-- #   sdmTMB( -->
+<!-- #   data = df_noz_doy_sel_M2, -->
+<!-- #   formula = fr_tot ~ factor(year) * s(pred_length_sc, k = 4) + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!-- #   #time_varying = ~ 1 + pred_length_sc,  -->
+<!-- #   #extra_time = missing_years,  -->
+<!-- #   #time = "year",  -->
+<!-- #   mesh = mesh_nozdoy_sel_M2, -->
+<!-- #   spatial = "on", -->
+<!-- #   family = Gamma(link = "log"), -->
+<!-- # ) -->
 
-sanity(M0)
-M0
+<!-- sanity(M3a1)  -->
+<!-- sanity(M3b)  -->
+<!-- sanity(M3c) -->
 
-nd_length <- expand.grid(
-  pred_length_sc = seq(min(df_noz_doy_sel$pred_length_sc), max(df_noz_doy_sel$pred_length_sc), length.out = 50),
-  Year_f = factor(2013:2022))
-nd_length$depth_sc <- 0
-nd_length$doy_sc <- 0
+<!-- qqnorm(residuals(M3a1)) -->
+<!-- qqline(residuals(M3a1)) -->
+<!-- qqnorm(residuals(M3c)) -->
+<!-- qqline(residuals(M3c)) -->
 
-p_M0_length <- predict(M0, newdata = nd_length, se_fit = TRUE, re_form = NA)
+<!-- # Only a and c left for comparison -->
+<!-- M3a1 -->
+<!-- M3b # Warning: Smoother fixed effect matrix names could not be retrieved. Thi smakes the smoother effect  -->
+<!-- M3c -->
 
-p_M0_length |>
-  ggplot(aes(pred_length_sc, exp(est), color = Year_f)) +
-  geom_line() #+
-  geom_ribbon(aes(fill = Year), alpha = 0.1)
-```
+<!-- ``` -->
+
+
+
+<!-- ```{r plot M3 models} -->
+
+<!-- # estimates for year effects -->
+<!-- M3a1_est <- tidy(M3a1, effects = "fixed", conf.int = TRUE)$estimate -->
+<!-- M3a1_se <- tidy(M3a1, effects = "fixed", conf.int = TRUE)$std.error -->
+
+<!-- y_M3a <- data.frame(year = sort(unique(M3a1$data$year)), coef.est = M3a1_est[1:39], coef.se = M3a1_se[1:39], model = "M3a") -->
+<!-- y_M3c <- data.frame(year = sort(unique(df_noz_doy_sel$year)), coef.est = tidy(M3c, effects = "ran_vals", conf.int = TRUE)$estimate, coef.se = tidy(M3c, effects = "ran_vals", conf.int = TRUE)$std.error, model = "M3c") -->
+
+<!-- y_M3a$model = "M3a" -->
+<!-- y_M3c$model = "M3c" -->
+<!-- y_M3 <- bind_rows(y_M3a,y_M3c) -->
+
+<!-- # Conditional effect of year. Cant predict over year when it is a random effect somehow -->
+<!-- # nd_M3a_year <- data.frame(year = sort(unique(M3a$data$year)), depth_sc = 0, pred_length_sc = 0, doy_sc = 0) -->
+<!-- # nd_M3c_year <- data.frame(year = sort(unique(M3c$data$year)), depth_sc = 0, pred_length_sc = 0, doy_sc = 0) -->
+<!-- # p_M3a_year <- predict(M3a, newdata = nd_M3a_year, re_form = NA, se_fit = TRUE) -->
+<!-- # p_M3c_year <- predict(M3c, newdata = nd_M3c_year, re_form = NA, se_fit = TRUE) # cant predict over year... -->
+
+<!-- # Predator length effects varying with year -->
+<!-- # M3a -->
+<!-- ypl_M3a1 <- data.frame(year = sort(unique(M3a1$data$year)), coef.est = c(M3a1_est[1] + M3a1_est[40], M3a1_est[1] + M3a1_est[40] + M3a1_est[42:79]), coef.se = c(M3a1_se[1], M3a1_se[42:79]), model = "M3a1") -->
+
+<!-- M3a2_est <- tidy(M3a2, effects = "fixed", conf.int = TRUE)$estimate -->
+<!-- ypl_M3a2 <- data.frame(year = sort(unique(M3a2$data$year)), coef.est = c(M3a2_est[1] + M3a2_est[2], M3a2_est[1] + M3a2_est[2] + M3a2_est[42:79]), model = "M3a2") -->
+
+<!-- ypl_comp_M3a <- bind_rows(ypl_M3a1[,c(1,2,4)], ypl_M3a2) -->
+
+<!-- # M3c  -->
+<!-- pl_M3c <- as.list(M3c$sd_report, "Estimate") -->
+<!-- pls_M3c <- as.list(M3c$sd_report, "Std. Error") -->
+<!-- M3c_est <- tidy(M3c, effects = "ran_vals", conf.int = TRUE)$estimate # random year effect  -->
+<!-- M3c_se <- tidy(M3c, effects = "ran_vals", conf.int = TRUE)$std.error -->
+
+<!-- ypl_M3c <- data.frame(year = seq(min(df_noz_doy_sel$year), max(df_noz_doy_sel$year)), coef.est = M3c_est[1] + pl_M3c$b_rw_t, coef.se = pls_M3c$b_rw_t, model = "M3c") -->
+
+<!-- # plot comparison of M3a1 and 2 of the effect of pred length varying with year -->
+<!-- ypl_comp_M3a |> -->
+<!--   ggplot(aes(year, exp(coef.est), color = model, linetype = model)) + -->
+<!--   geom_line() + -->
+<!--   ggtitle(" order of interactive terms (a*b vs b*a) makes no difference") -->
+
+<!-- # plot year coef for a and c -->
+<!-- y_M3 |> -->
+<!--   ggplot(aes(year, exp(coef.est), color = model)) + -->
+<!--   geom_line() + -->
+<!--   geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) + -->
+<!--   scale_x_continuous(breaks = seq(min(df_noz_doy_sel$year), max(df_noz_doy_sel$year), by = 20)) + -->
+<!--   ylab("random estimate of year") -->
+
+<!-- # compare M3a and c of the effect if pred length varying with year -->
+<!-- bind_rows(ypl_M3c, ypl_M3a1) |> -->
+<!--   ggplot(aes(year, exp(coef.est), color = model)) + -->
+<!--   geom_line() + -->
+<!--   geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) + -->
+<!--   scale_x_continuous(breaks = seq(min(df_noz_doy_sel$year), max(df_noz_doy_sel$year), by = 10)) + -->
+<!--   ylab("est for pred.length")  -->
+
+<!-- ``` -->
+
+<!-- In the plots above, M3a has the intercept for the first year (1982) and the fixed effect of pred_length_sc added to the interaction effect of year and pred_length_sc. M3c has the random effect of year added to the effect of predator length varying with year but no overall effect of predator length. This is a bit odd as the predator length effect is large (est 0.4) in M3a. What am I missing.. -->
+
+<!-- ```{r} -->
+<!-- # Compare M3 with M1 and 2 -->
+
+<!-- bind_rows(ypl_M3a1,ypl_M3c) |> -->
+<!-- bind_rows(ypl_M12) |> -->
+<!--   ggplot(aes(year, exp(coef.est), color = model, linetype = model)) + -->
+<!--   geom_line() + -->
+<!--   scale_x_continuous(breaks = seq(min(df_noz_doy_sel$year), max(df_noz_doy_sel$year), by = 10)) + -->
+<!--   ylab("est for pred.length") -->
+<!-- ``` -->
+
+<!-- The intercepts may be different... -->
+
+<!-- ```{r} -->
+
+<!-- # M1 -->
+<!-- # formula = fr_tot ~ 0 + as.factor(year) + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!-- #   time_varying = ~ 0 + pred_length_sc, # implies time varying random walk intercept  -->
+<!-- # M2 -->
+<!-- # formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!-- #   time_varying = ~ 1 + pred_length_sc, -->
+<!-- # M3a  -->
+<!-- # formula = fr_tot ~ 0 + factor(year) * pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!-- # M3c -->
+<!-- # formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc + (0|year_f),  -->
+<!-- #   time_varying = ~ 0 + pred_length_sc, -->
+
+<!-- # I remove the year intercepts, i.e. 1982 for M3a (but keep the predator length effect) and the random year effect for M3c.. -->
+<!-- # ypl_M3a1 <- data.frame(year = sort(unique(M3a1$data$year)), coef.est = c(M3a1_est[1] + M3a1_est[40], M3a1_est[1] + M3a1_est[40] + M3a1_est[42:79]), coef.se = c(M3a1_se[1], M3a1_se[42:79]), model = "M3a1") -->
+<!-- ypl_M3aa   <- data.frame(year = sort(unique(M3a1$data$year)), coef.est = c(M3a1_est[40], M3a1_est[40] + M3a1_est[42:79]), coef.se = c(M3a1_se[1], M3a1_se[42:79]), model = "M3a1") -->
+
+<!-- # ypl_M3c <- data.frame(year = seq(min(df_noz_doy_sel$year), max(df_noz_doy_sel$year)), coef.est = M3c_est[1] + pl_M3c$b_rw_t, coef.se = pls_M3c$b_rw_t, model = "M3c") -->
+<!-- ypl_M3cc <- data.frame(year = seq(min(df_noz_doy_sel$year), max(df_noz_doy_sel$year)), coef.est = pl_M3c$b_rw_t, coef.se = pls_M3c$b_rw_t, model = "M3c") -->
+
+<!-- bind_rows(ypl_M3aa,ypl_M3cc) |> -->
+<!-- bind_rows(ypl_M12) |> -->
+<!--   ggplot(aes(year, exp(coef.est), color = model, linetype = model)) + -->
+<!--   geom_line() + -->
+<!--   scale_x_continuous(breaks = seq(min(df_noz_doy_sel$year), max(df_noz_doy_sel$year), by = 10)) + -->
+<!--   ylab("est for pred.length")  -->
+
+<!-- ``` -->
+<!-- By removing the year intercepts, i.e. 1982 for M3a and the random year effect for M3c, we get the coeffcients for the effects of predator length varying with year on the same scale as M1 and M2.  -->
+
+<!-- ## Summary -->
+
+<!--  * M3a - Specifying pred_length_sc$*$factor(year) or factor(year)$*$pred_length_sc doesn't matter. A fixed effect interactiopn makes for somewhat different coefficient estimates for predator length over year compared to having this effect in time_varying.  -->
+<!--  * M3b - The effect of a smoother on predator length varying with year (i.e. by = year) cannot be estimated by the model( " Smoother fixed effect matrix names could not be retrieved"). The smoother term can't be put on time_varying (the function doesn't recognize the s() function). There are more issue with the model (see above) and we need to look into this if we want to do this model.I've dropped this option.  -->
+<!--  * M3c - year as a randoom effect instead of a time_varying intercept makes small differences.   -->
+<!--  * M3d - An interaction between year and a smooth effect on pred_length_sc seemingly doesn't work. This prevents sdmTMB from finding year. Therefore I've dropped this option. -->
+
+<!-- Independent of model structure, the models mantain the same estimate for the predator length effects varying over year. The year effect may differ however  -->
+
+<!-- *I also NOTEd that, if time_varying is on but spatial is off, it fits a spatial model and asks for xy coordinates when I use predict()*. -->
+
+
+<!-- ## Appendix 1. Variation and time_varying intercepts vs fixed factor year -->
+<!-- ```{r} -->
+<!-- # Pred length i fixed effect. test på 10 år. Om m2 smoothen är, t_v contra fator år har lite skilllnad men här har vi. Intercpetrn er . testa genom längs om en fixe deefkt om tv fixed ekfkket kan fånaga annual fluctuatio -->
+
+<!-- # M1 varies but not M2 -->
+<!-- Mtesta <-  -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel |> filter(year_f %in% 2012:2022), -->
+<!--   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!--   time_varying = ~ 1 + pred_length_sc, -->
+<!--   time = "year", # for spatiotemporal and time_varying -->
+<!--   #mesh = mesh_nozdoy_sel, -->
+<!--   spatiotemporal = "off", -->
+<!--   spatial = "off", -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
+
+<!-- Mtestb <-  -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel |> filter(year_f %in% 2012:2022), -->
+<!--   formula = fr_tot ~ 0 + year_f + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!--   time_varying = ~ 0 + pred_length_sc, -->
+<!--   #extra_time = missing_years, # to fill in empty years -->
+<!--   time = "year", # for spatiotemporal and time_varying -->
+<!--   #mesh = mesh_nozdoy_sel, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
+
+<!-- Mtestc <-  -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel |> filter(year_f %in% 2012:2022), -->
+<!--   formula = fr_tot ~ 0 + pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!--   time_varying = ~ 1, -->
+<!--   #extra_time = missing_years, # to fill in empty years -->
+<!--   time = "year", # for spatiotemporal and time_varying -->
+<!--   #mesh = mesh_nozdoy_sel, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
+<!-- Mtestd <-  -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel |> filter(year_f %in% 2012:2022), -->
+<!--   formula = fr_tot ~ 0 + year_f + pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,  -->
+<!--   time_varying = ~ 0, -->
+<!--   time = "year", # for spatiotemporal and time_varying -->
+<!--   #mesh = mesh_nozdoy_sel, -->
+<!--   spatiotemporal = "off", -->
+<!--   spatial = "off", -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
+
+<!-- nd_year <- data.frame(year = Mtesta$data$year, depth_sc = 0, pred_length_sc = 0, doy_sc = 0) -->
+<!-- p_Mtesta_year <- predict(Mtesta, newdata = nd_year, re_form = NA, se_fit = TRUE) -->
+
+<!-- nd_year <- data.frame(year = Mtestb$data$year, year_f = Mtestb$data$year_f, depth_sc = 0, pred_length_sc = 0, doy_sc = 0) -->
+<!-- p_Mtestb_year <- predict(Mtestb, newdata = nd_year, re_form = NA, se_fit = TRUE) -->
+
+<!-- nd_year <- data.frame(year = Mtestc$data$year, depth_sc = 0, pred_length_sc = 0, doy_sc = 0) -->
+<!-- p_Mtestc_year <- predict(Mtestc, newdata = nd_year, re_form = NA, se_fit = TRUE) -->
+
+<!-- nd_year <- data.frame(year = Mtestd$data$year, year_f = Mtestd$data$year_f, depth_sc = 0, pred_length_sc = 0, doy_sc = 0) -->
+<!-- p_Mtestd_year <- predict(Mtestd, newdata = nd_year, re_form = NA, se_fit = TRUE) -->
+
+<!-- p_Mtesta_year$model = "a" -->
+<!-- p_Mtestb_year$model = "b" -->
+<!-- p_Mtestc_year$model = "c" -->
+<!-- p_Mtestd_year$model = "d" -->
+
+<!-- p_year <- bind_rows(p_Mtesta_year, p_Mtestb_year,p_Mtestc_year, p_Mtestd_year) -->
+
+<!-- p_year |> -->
+<!--   ggplot(aes(year, exp(est), color = model)) + -->
+<!--   geom_line() + -->
+<!--   geom_ribbon(aes(ymin = exp(est-1.96*est_se), ymax = exp(est+1.96*est_se)), alpha = 0.1) + -->
+<!--   scale_x_continuous(breaks = seq(min(df_noz_doy_sel$year), max(df_noz_doy_sel$year), by = 10)) + -->
+<!--   ylab("prediction for year") -->
+<!-- ``` -->
+
+<!-- ## Appendix 2. Model with a smoother on length -->
+
+<!-- This causes issues that I so far havent figured out how to solve -->
+
+<!-- ```{r} -->
+<!-- M0 <- -->
+<!--   sdmTMB( -->
+<!--   data = df_noz_doy_sel |> filter(year > 2012), -->
+<!--   formula = fr_tot ~ 0 + year_f + s(pred_length_sc, m = 2, by = year_f) + depth_sc,  -->
+<!--   spatiotemporal = "off", -->
+<!--   spatial = "off", -->
+<!--   family = Gamma(link = "log"), -->
+<!-- ) -->
+
+<!-- sanity(M0) -->
+<!-- M0 -->
+
+<!-- nd_length <- expand.grid( -->
+<!--   pred_length_sc = seq(min(df_noz_doy_sel$pred_length_sc), max(df_noz_doy_sel$pred_length_sc), length.out = 50), -->
+<!--   year_f = factor(2013:2022)) -->
+<!-- nd_length$depth_sc <- 0 -->
+<!-- nd_length$doy_sc <- 0 -->
+
+<!-- p_M0_length <- predict(M0, newdata = nd_length, se_fit = TRUE, re_form = NA) -->
+
+<!-- p_M0_length |> -->
+<!--   ggplot(aes(pred_length_sc, exp(est), color = year_f)) + -->
+<!--   geom_line() #+ -->
+<!--   geom_ribbon(aes(fill = year), alpha = 0.1) -->
+<!-- ``` -->
