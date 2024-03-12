@@ -91,7 +91,7 @@ shimmyshimmy <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv"))
 SE <- read_csv(paste0(home, "/data/stomach/full_stomach_data.csv"))
 
 ```
-## New database data (DAPSTOM 6.3, dowloaded Jan 15 2024)
+## New database data (dowloaded Jan 15 2024)
 Start with new database data. Have a look at the data... The description of the data can be found here: <http://datsu.ices.dk/web/selRep.aspx?Dataset=157>
 
 ```{r quick glimpse new data}
@@ -101,7 +101,7 @@ names(pred)
 names(prey)
 ```
 
-## Join all data files in DAPSTOM 6.3 (new db)
+## Join all data files (new db)
 We do this in a specific order: fi -> hi -> pred -> prey.
 
 For some joins, there are multiple column names shared in addition to the key that I could remove and keep only the ID key and the non-shared columns but instead I keep them. First I need to ensure they are the same (VT what is the same and how do you do this?), and not only have the same name. Will also check if both datasets have the same amount of NA before choosing which column to carry from which dataset.
@@ -223,7 +223,7 @@ agg_prey <- agg_prey |>
   mutate(prey_weight_source = ifelse(Weight <= 0 & prey_length > 0 & Count >= 0 , "estimated", "observed")) |> 
   mutate(Weight = ifelse(prey_weight_source == "estimated", (0.01*prey_length^3)*Count, Weight))
 
-agg_prey |> filter(Weight <= 0) |> select(prey_class, Weight, prey_length, Count)
+agg_prey |> filter(Weight <= 0) |> dplyr::select(prey_class, Weight, prey_length, Count)
 # Even if we estimate the prey weight based on the length of the prey and the number of the prey, we still have 173 rows that Weight == -9 or 0. We can give them the average weight (for herring, sprat and saduria but not aggregated not speices specific prey classes). This may produce outliers when the predator is small compared to the avg prey size and but these would be removed in a later cleaning stage. Lets do this for all but "other" and remove those lines in "other" and "other_invert".
 prey_avg_ind_weight <- agg_prey |>
   filter(Weight > 0 & Count > 0) |>
@@ -291,7 +291,7 @@ agg_prey_summed <- agg_prey_summed |>
 agg_prey_summed <- agg_prey_summed |> 
   mutate(sprat = sprat + unid_clupeids*0.5,
          herring = herring + unid_clupeids*0.5) |> 
-  select(!unid_clupeids)
+  dplyr::select(!unid_clupeids)
 
 ```
 
@@ -304,7 +304,7 @@ agg_prey_summed <-
   drop_na(pred_length) 
 
 t <- agg_prey_summed |>
-  select("other_invert", "benth_fish", "other_fish", "sprat", "herring", "other") |>
+  dplyr::select("other_invert", "benth_fish", "other_fish", "sprat", "herring", "other") |>
   rowSums() == 0
 length(which(t)) # empty stomachs..
 ```
@@ -381,7 +381,7 @@ dd |>
 
 ## Old database data
 
-The data in the old ICES database contains much more data than what is found in the new version of the database (DAPSTOM 6.3) but is in poor shape containing many errors and unique identiifers are missing. Below, identieferies for hauls and predators are made and the old db is cleaned.
+The data in the old ICES database contains much more data than what is found in the new version of the database but is in poor shape containing many errors and unique identiifers are missing. Below, identifiers for hauls and predators are made and the old db is cleaned.
 
 ```{r}
 
@@ -419,7 +419,7 @@ old_data <- old_db |>
 
 # add Country and ICESrectangle to prey data from haul data and create identifier
 prey_temp <- prey |>
-  left_join(select(hifi, tblUploadID, Country, ICESrectangle), by = "tblUploadID", multiple = "any") |>
+  left_join(dplyr::select(hifi, tblUploadID, Country, ICESrectangle), by = "tblUploadID", multiple = "any") |>
   mutate(Haul_ID = paste(Country, Year, Month, Day, HaulNo, ICESrectangle, sep = "_"))
 
 # identify cod in hauls in the baltic not present in the new data 
@@ -468,7 +468,7 @@ missing_db3 <- missing_db3 |>
          prey_class = ifelse(!prey_class %in% c("other_invert", "saduria", "benth_fish", "herring", "unid_clupeids", "sprat", "other_fish"), "other", prey_class)) # NOTE, "clupea" and"clupeidea" etc. are "other"
 
 # No duplicates?
-missing_db3 |> group_by(Haul_ID) |> select(-Dataset, -ICES_SampleID) |> #ID, `Predator_Weight(mean)`) |> 
+missing_db3 |> group_by(Haul_ID) |> dplyr::select(-Dataset, -ICES_SampleID) |> #ID, `Predator_Weight(mean)`) |> 
   duplicated() |> which()
 
 # in the old db,, we have both pred and prey data. This means we need to summarize and then add in pred info from the whole db df. columns that are keep the columns we need we use mutate instead of summarise(). 
@@ -490,13 +490,13 @@ missing_db3_summed <- missing_db3_summed |>
 missing_db3_summed <- missing_db3_summed |> 
   mutate(sprat = sprat + unid_clupeids*0.5,
          herring = herring + unid_clupeids*0.5) |> 
-  select(!unid_clupeids)
+  dplyr::select(!unid_clupeids)
 
 # colnames(missing_db3) selecting columns without prey info in the join.
 mm <- missing_db3_summed |> 
-   left_join( select(missing_db3, Dataset, Country, Ship, Latitude, Longitude, Estimated_Lat_Lon, ICESrectangle, Year, Month, Day, Time, Station, HaulNo, Depth, 'SampleNo(FishID)', Predator_AphiaID, Predator_LatinName, pred_weight, pred_length, prey_weight, Haul_ID, pred_weight_source, prey_weight_source, pred_ID, empty_stom), by = "pred_ID", multiple = "first")
+   left_join( dplyr::select(missing_db3, Dataset, Country, Ship, Latitude, Longitude, Estimated_Lat_Lon, ICESrectangle, Year, Month, Day, Time, Station, HaulNo, Depth, 'SampleNo(FishID)', Predator_AphiaID, Predator_LatinName, pred_weight, pred_length, prey_weight, Haul_ID, pred_weight_source, prey_weight_source, pred_ID, empty_stom), by = "pred_ID", multiple = "first")
 
-mm |> select("other", "other_invert", "saduria", "benth_fish","herring", "sprat", "other_fish") |>
+mm |> dplyr::select("other", "other_invert", "saduria", "benth_fish","herring", "sprat", "other_fish") |>
   rowSums() == 0
   
 mm |> count(empty_stom)
@@ -537,7 +537,7 @@ SE_wide2 <- SE_wide %>%
 SE_wide2 <- SE_wide2 |> 
   mutate(sprat = sprat + unid_clupeids*0.5,
          herring = herring + unid_clupeids*0.5) |> 
-  select(!unid_clupeids)
+  dplyr::select(!unid_clupeids)
 
 # Check it's correct! The sum of all groups should be the sum of all categories
 t <- SE_wide2 |>
@@ -553,7 +553,7 @@ SE_wide2 <- SE_wide2 %>%
   dplyr::select(pred_id, other_invert, herring, saduria, sprat, benth_fish, other, other_fish)
 
 # Add back in other information about the predator ID and add and rename some columns
-ll <-SE |>
+ll <- SE |>
   dplyr::select(predator_latin_name, species, pred_weight_g, pred_length_cm,
                 year, quarter, month, ices_rect, subdiv, haul_id, smhi_serial_no,
                 X, Y, lat, lon, pred_id, fle_kg_km2, mcod_kg_km2, scod_kg_km2, date,
@@ -609,7 +609,7 @@ new_SE_data <- ll |>
          Year = year,
          Depth = bottom_depth,
          ICESrectangle = ices_rect) |>
-  select(-c(X, Y)) |>
+  dplyr::select(-c(X, Y)) |>
   mutate(data_source = "new_SE",
          Day = day(date),
          Month = month)
@@ -618,9 +618,9 @@ new_SE_data <- ll |>
 comcol_newold_pred <- intersect( intersect(colnames(new_db_data), colnames(old_db_data)),
                                  colnames(new_SE_data))
 
-bind_rows( new_db_data |> select(Year, pred_ID, data_source), 
-           old_db_data |> select(Year, pred_ID, data_source),
-           new_SE_data |> select(Year, pred_ID, data_source) ) |>
+bind_rows( new_db_data |> dplyr::select(Year, pred_ID, data_source), 
+           old_db_data |> dplyr::select(Year, pred_ID, data_source),
+           new_SE_data |> dplyr::select(Year, pred_ID, data_source) ) |>
   group_by(Year, data_source) |>
   summarize(count = n()) |>
   ggplot() +
@@ -666,20 +666,20 @@ newold2 |>
   geom_histogram() +
   facet_wrap(~name, ncol = 1, scales = "free")
 
-quantile(newold2$fr_tot, 0.99) 
-# remove feeding ratios above the 99th percentile 
-newold3 <- newold2 |>
-  filter(between(fr_tot, 0, 0.33)) |>
-  filter(between(fr_spr, 0, 0.33)) |> 
-  filter(between(fr_her, 0, 0.33)) |> 
-  filter(between(fr_sad, 0, 0.33)) |> 
-  filter(between(fr_other, 0, 0.33)) |> 
-  filter(between(fr_other_invert, 0, 0.33)) |> 
-  filter(between(fr_other_fish, 0, 0.33)) |> 
-  filter(between(fr_benth_fish, 0, 0.33))
+# quantile(newold2$fr_tot, 0.99) 
+# # remove feeding ratios above the 99th percentile 
+newold3 <- newold2 #|>
+#   filter(between(fr_tot, 0, 0.33)) |>
+#   filter(between(fr_spr, 0, 0.33)) |> 
+#   filter(between(fr_her, 0, 0.33)) |> 
+#   filter(between(fr_sad, 0, 0.33)) |> 
+#   filter(between(fr_other, 0, 0.33)) |> 
+#   filter(between(fr_other_invert, 0, 0.33)) |> 
+#   filter(between(fr_other_fish, 0, 0.33)) |> 
+#   filter(between(fr_benth_fish, 0, 0.33))
   
 newold3 |>
-  select(fr_sad, fr_spr, fr_her, fr_tot, fr_other, fr_other_invert, fr_benth_fish, fr_other_fish) |> 
+  dplyr::select(fr_sad, fr_spr, fr_her, fr_tot, fr_other, fr_other_invert, fr_benth_fish, fr_other_fish) |> 
   pivot_longer(everything()) |> 
   ggplot(aes(value)) +
   geom_histogram(bins=100) +
@@ -709,21 +709,24 @@ newold3 <- newold3 |>
 
 # Fix some columns
 df <- newold3 |> 
-  rename(ices_rect = ICESrectangle) |> 
+  dplyr::select(!month) |> #remove errornous month
+  rename(ices_rect = ICESrectangle,
+         year = Year,
+         month = Month) |> 
   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
-  dplyr::select(pred_ID, herring, saduria, sprat, other, other_invert, other_fish, benth_fish, fr_tot, fr_sad, fr_spr, fr_her, fr_other, fr_other_invert, fr_benth_fish, fr_other_fish, Year, Month, day_of_year, pred_weight, pred_length, saduria, sprat, herring, lat, lon, ices_rect, X, Y)#, depth)
+  dplyr::select(pred_ID, herring, saduria, sprat, other, other_invert, other_fish, benth_fish, fr_tot, fr_sad, fr_spr, fr_her, fr_other, fr_other_invert, fr_benth_fish, fr_other_fish, year, month, day_of_year, pred_weight, pred_length, saduria, sprat, herring, lat, lon, ices_rect, X, Y)#, depth)
 
 # Add sample size per coordinate for plotting
 df_plot <- df |>
-  group_by(Year, Y, X) |> 
+  group_by(year, Y, X) |> 
   mutate(sample_size = n(),
-         pos_id = paste(Year, X, Y)) |> 
+         pos_id = paste(year, X, Y)) |> 
   ungroup() |> 
   distinct(pos_id, .keep_all = TRUE)
   
 plot_map_fc +
   geom_point(data = df_plot, aes(X*1000, Y*1000, size = sample_size), alpha = 0.5) +
-  facet_wrap(~ Year, ncol = 6) +
+  facet_wrap(~ year, ncol = 6) +
   #theme_sleek(base_size = 6) + 
   theme(legend.position = "bottom",
         axis.text.x = element_text(angle = 90)) +
@@ -765,18 +768,26 @@ plot_map_fc +
   theme_sleek(base_size = 6) + 
   geom_sf()
 
-ggplot(df, aes(lon, lat, color = depth)) + 
+#remove points outside the baltic, i.e. the western most points in:
+df |>
+  ggplot(aes(lon, lat, color = depth)) + 
   geom_point() + 
+  geom_vline(xintercept = 13)
   coord_sf()
+
+df <- df |>
+  filter( lon > 13)
+
 ```
 
 ```{r}
 # Save data
 write_csv(df, paste0(home, "/data/clean/stomachs.csv"))
+
 ```
 
 ```{r}
 #| echo: false
 #| eval: false
-renderthis::to_pdf(paste0(here::here(), "/R/prepare-data/01-test-prepare-stomach-data.html"))
+#renderthis::to_pdf(paste0(here::here(), "/R/prepare-data/01-test-prepare-stomach-data.html"))
 ```

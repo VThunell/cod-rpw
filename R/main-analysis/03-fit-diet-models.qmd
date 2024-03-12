@@ -40,6 +40,7 @@ invisible(lapply(pkgs, library, character.only = T))
 # Source code for map plots
 # You need: # devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
 devtools::source_url("https://raw.githubusercontent.com/maxlindmark/pred-prey-overlap/main/R/functions/map-plot.R")
+#source(paste0(home, "/R/functions/map-plot.R"))
 options(ggplot2.continuous.colour = "viridis")
 
 # devtools::install_github("seananderson/ggsidekick") # not on CRAN 

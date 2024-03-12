@@ -53,7 +53,7 @@ Read data and depth-raster
 #| message: false
 #| warning: false
 
-dfß <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
+d <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
          herring_sc = (herring - mean(herring))/sd(herring),
          saduria_sc = (saduria - mean(saduria))/sd(saduria),          
@@ -664,7 +664,7 @@ pred_grid <- pred_grid |> dplyr::select(-subdiv)
 ## Save
 
 ```{r save}
-# Remove variables and save
+# Split in two and save
 pred_grid_63_92 <- pred_grid |> filter(year < 1993)
 pred_grid_93_22 <- pred_grid |> filter(year > 1992)
 

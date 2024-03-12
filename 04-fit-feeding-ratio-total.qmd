@@ -91,10 +91,9 @@ pred_grid <- bind_rows(read_csv(paste0(home, "/data/clean/pred_grid_(1_2).csv"))
 
 # remove empty stomachs and day of year that are NA
 df_tot <- df |>
- filter( fr_tot > 0 ) |>
+ filter( fr_tot > 0 & fr_tot <= 0.37) |>
  filter( !is.na(day_of_year) ) |>
  mutate(doy_sc = (day_of_year - mean(day_of_year))/sd(day_of_year) )
-# read_csv(paste0(home, "/data/clean/stomachs.csv")) |> 
 
 # mesh
 mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
@@ -135,37 +134,7 @@ df_tot |>
 
 ```{r fit M1 and 2}
 
-# time <- Sys.time()
-# 
-# Mod <- 
-#   sdmTMB(
-#   data = df_tot,
-#   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
-#   time_varying = ~ 1 + pred_length_sc,
-#   extra_time = missing_years,
-#   time = "year", 
-#   mesh = mesh_tot,
-#   spatial = "on",
-#   spatiotemporal = "ar1",
-#   family = Gamma(link = "log")
-# )
-# 
-# Sys.time() - time 
-
-# without spatial and spatiotemporal it takes 14 sec. Spatial model takes 20 sec. AR1 spatiotemporal model takes 4 hours.
-
-Mod_s <- 
-  sdmTMB(
-  data = df_tot,
-  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
-  time_varying = ~ 1 + pred_length_sc,
-  extra_time = missing_years,
-  time = "year", 
-  mesh = mesh_tot,
-  spatial = "on",
-  spatiotemporal = "off",
-  family = Gamma(link = "log")
-)
+# fitting without spatial and spatiotemporal effects takes 15 sec, spatial model 20. AR1 spatiotemporal model 4 hours.
 
 Mod_n <- 
   sdmTMB(
@@ -177,29 +146,59 @@ Mod_n <-
   mesh = mesh_tot,
   spatial = "off",
   spatiotemporal = "off",
-  family = Gamma(link = "log")
+  family = lognormal(link = "log")
 )
 
+Mod_s <- 
+  sdmTMB(
+  data = df_tot,
+  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+  time_varying = ~ 1 + pred_length_sc,
+  extra_time = missing_years,
+  time = "year", 
+  mesh = mesh_tot,
+  spatial = "on",
+  spatiotemporal = "off",
+  family = lognormal(link = "log")
+)
 
+# time <- Sys.time()
+# 
+df_tot_sel <- df_tot |>
+ filter( year == 1993)
+
+# mesh
+mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
+
+Mod <-
+  sdmTMB(
+  data = df_tot_sel,
+  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc,
+  time_varying = ~ 1 + pred_length_sc,
+  extra_time = missing_years,
+  time = "year",
+  mesh = mesh_tot,
+  spatial = "on",
+  spatiotemporal = "ar1",
+  family = lognormal(link = "log")
+)
+# 
+# Sys.time() - time 
+#saveRDS(Mod, file = paste0("fr-tot_Mod_ar1",Sys.Date(),".rds"))
+Mod <- readRDS(Mod, file = paste0("fr-tot_Mod_ar1",Sys.Date(),".rds"))
+
+sanity(Mod_n)
+sanity(Mod_s)
 sanity(Mod)
-
-qqnorm(residuals(Mod_n))
-qqline(residuals(Mod_n))
-qqnorm(residuals(Mod_s))
-qqline(residuals(Mod_s))
-qqnorm(residuals(Mod))
-qqline(residuals(Mod))
-# space_res_ln <- mcmc_res <- residuals(tot_space_ln, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(tot_space_ln, mcmc_iter = 201, mcmc_warmup = 200))
 
 AIC(Mod_n)
 AIC(Mod_s)
-AIC(Mod)
-#saveRDS(Mod, file = paste0("fr-tot_Mod_ar1",Sys.Date(),".rds"))
-#Mod <- readRDS(Mod, file = paste0("fr-tot_Mod_ar1",Sys.Date(),".rds"))
-Mod_res <- sdmTMBextra::predict_mle_mcmc(Mod, mcmc_warmup = 200, mcmc_iter = 201)
-qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
-qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
-tidy(Mod, effects = "ran_pars", conf.int=TRUE) 
+AIC(Mod) # lowest AIC
+
+# Mod_res <- sdmTMBextra::predict_mle_mcmc(Mod, mcmc_warmup = 200, mcmc_iter = 201)
+# qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
+# qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
+# tidy(Mod, effects = "ran_pars", conf.int=TRUE) 
 
 ```
 
@@ -217,7 +216,7 @@ Mod_n_tv_se <- as.list(Mod_n$sd_report, "Std. Error")
 
 y_n_Mod <- data.frame(year = sort(unique(Mod_n$data$year)), coef.est = Mod_n_tv_est$b_rw_t[,1,], coef.se = Mod_n_tv_se$b_rw_t[,1,], model = "nos")
 y_s_Mod <- data.frame(year = sort(unique(Mod_s$data$year)), coef.est = Mod_s_tv_est$b_rw_t[,1,], coef.se = Mod_s_tv_se$b_rw_t[,1,], model = "spatial")
-y_Mod <- data.frame(year = sort(unique(Mod$data$Year)), coef.est = Mod_tv_est$b_rw_t[,1,], coef.se = Mod_tv_se$b_rw_t[,1,], model = "spatiotemporal")
+y_Mod <- data.frame(year = sort(unique(Mod$data$year)), coef.est = Mod_tv_est$b_rw_t[,1,], coef.se = Mod_tv_se$b_rw_t[,1,], model = "spatiotemporal")
 
 bind_rows(y_Mod, y_s_Mod, y_n_Mod) |>
   ggplot(aes(year, exp(coef.est), color = model)) +
@@ -227,12 +226,15 @@ bind_rows(y_Mod, y_s_Mod, y_n_Mod) |>
   ylab("est for year") # the cf gets very large for the missing year
 
 # Coefficient of length varying with year
-ypl_Mod <- data.frame(year = sort(unique(Mod$data$year)), coef.est = Mod_tv_est$b_rw_t[,2,], coef.se = Mod_tv_se$b_rw_t[,2,])
+ypl_Mod_n <- data.frame(year = sort(unique(Mod_n$data$year)), coef.est = Mod_n_tv_est$b_rw_t[,2,], coef.se = Mod_n_tv_se$b_rw_t[,2,], model = "nos")
+ypl_Mod_s <- data.frame(year = sort(unique(Mod_s$data$year)), coef.est = Mod_s_tv_est$b_rw_t[,2,], coef.se = Mod_s_tv_se$b_rw_t[,2,], model = "spatial")
+ypl_Mod <- data.frame(year = sort(unique(Mod$data$year)), coef.est = Mod_tv_est$b_rw_t[,2,], coef.se = Mod_tv_se$b_rw_t[,2,], model = "spatiotemporal")
 
-ypl_Mod |>
-ggplot(aes(year, exp(coef.est))) +
+
+bind_rows(ypl_Mod, ypl_Mod_s, ypl_Mod_n) |>
+ggplot(aes(year, exp(coef.est), color = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) +
+  #geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), alpha = 0.3) +
   scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
   ylab("est for pred.length") 
 
@@ -245,7 +247,6 @@ ggplot(aes(year, exp(coef.est))) +
 # Predict on grid, for indices and maps
 nd_pred_grid <- pred_grid |>
   #filter(!year == 2022 ) |>
-  #rename(Year = year) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
          doy_sc = 0,
          pred_length_sc = 0)
@@ -271,9 +272,9 @@ time <- Sys.time()
 index_tot_s <- get_index_sims(pred_Mod_s, area = rep(1/ncells, nrow(pred_Mod_s)))
 Sys.time() - time
 
-Mod_res <- sdmTMBextra::predict_mle_mcmc(Mod, mcmc_warmup = 200, mcmc_iter = 201)
-qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
-qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
+# Mod_res <- sdmTMBextra::predict_mle_mcmc(Mod, mcmc_warmup = 200, mcmc_iter = 201)
+# qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
+# qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
 
 ```
 
@@ -286,7 +287,7 @@ bind_rows(index_tot |> mutate(method = "regular"),
   facet_wrap(~method, scales = "fixed") + 
   geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0) 
 ```
-```{r predictions pred length}
+```{r predictions pred length Mod}
 
 # Predict on grid, for indices and maps
 nd_sm_pred_grid <- pred_grid |>
@@ -299,13 +300,14 @@ nd_la_pred_grid <- pred_grid |>
          pred_length_sc = (55 - mean(df$pred_length))/sd(df$pred_length))
 
 pred_Mod_sm <- predict(Mod_s, newdata = nd_sm_pred_grid, return_tmb_object = TRUE)
-pred_Mod_la <- predict(Mod_s, newdata = nd_la_pred_grid, return_tmb_object = TRUE)
+pred_Mod_la <- predict(Mods, newdata = nd_la_pred_grid, return_tmb_object = TRUE)
 
 # Make temporal index!
 ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
+#??sdmTMB:predict
 
-index_tot_sm <- get_index(pred_Mod_sm, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
-index_tot_la <- get_index(pred_Mod_la, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
+index_tot_sm <- get_index(pred_Mod_sm, area = rep(1/ncells, nrow(pred_Mod_sm$data)), bias_correct = TRUE)
+index_tot_la <- get_index(pred_Mod_la, area = rep(1/ncells, nrow(pred_Mod_la$data)), bias_correct = TRUE)
 #index_tot <- get_index(pred_Mod, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
 
 bind_rows(index_tot_sm |> mutate(length = "15"),
@@ -319,6 +321,50 @@ bind_rows(index_tot_sm |> mutate(length = "15"),
   ggtitle("predicted est (not simulated)")
   #facet_wrap(~method, scales = "fixed") + 
   geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0) 
+
+```
+
+```{r}
+
+plot_map_fc +
+  geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+  facet_wrap(~year) +
+  theme_sleek(base_size = 6) + 
+  geom_sf() +
+  ggtitle("all effects")
+
+plot_map_fc +
+  geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = exp(est_non_rf)), alpha = 0.5) +
+  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+  facet_wrap(~year) +
+  theme_sleek(base_size = 6) + 
+  geom_sf() + 
+  ggtitle("fixed effects")
+
+plot_map_fc +
+  geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = est_rf), alpha = 0.5) +
+  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+  facet_wrap(~year) +
+  theme_sleek(base_size = 6) + 
+  geom_sf() +
+  ggtitle("random effects")
+
+plot_map_fc +
+  geom_point(data = pred_Mod$data |> filter(year == 1993), aes(X*1000, Y*1000, color = omega_s), alpha = 0.5) +
+  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+  facet_wrap(~year) +
+  theme_sleek(base_size = 6) + 
+  geom_sf() +
+  ggtitle("spatial random effects")
+
+plot_map_fc +
+  geom_point(data = pred_Mod$data |> filter( year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = epsilon_st), alpha = 0.5) +
+  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+  facet_wrap(~year) +
+  theme_sleek(base_size = 6) + 
+  geom_sf() +
+  ggtitle("spatialtemporal random effects")
 
 ```
 <!-- ```{r plot prediction} -->
