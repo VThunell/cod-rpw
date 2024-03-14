@@ -2,18 +2,18 @@ library(sf)
 # Packages not on CRAN
 # devtools::install_github("seananderson/ggsidekick") # not on CRAN 
 library(ggsidekick)
-library(rnaturalearth)
-library(rnaturalearthdata)
+# library(rnaturalearth)
+# library(rnaturalearthdata)
 
 theme_set(theme_sleek())
 
 sf::sf_use_s2(FALSE)
 
 # Specify map ranges
-ymin = 52; ymax = 60.75; xmin = 10; xmax = 24
+ymin = 52; ymax = 60.5; xmin = 10; xmax = 24
 
 map_data <- rnaturalearth::ne_countries(
-  scale = "large",
+  scale = "medium",
   returnclass = "sf", continent = "europe")
 
 # Crop the polygon for plotting and efficiency:
