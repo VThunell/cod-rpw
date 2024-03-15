@@ -26,7 +26,8 @@ execute:
 
 # Load libraries, install if needed
 pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "sdmTMBextra", "terra", "mapplots",
-          "viridis", "visreg", "modelr", "future", "kableExtra", "ggh4x", "patchwork") 
+          "viridis", "visreg", "modelr", "future", "kableExtra", "ggh4x", "patchwork",
+          "purrr", "furrr") 
 
 if(length(setdiff(pkgs,rownames(installed.packages()))) > 0){
 
@@ -187,8 +188,7 @@ Mod_s <-
 # 
 # Sys.time() - time
 # saveRDS(Mod, file = paste0("fr-tot_Mod_ar1_b",Sys.Date(),".rds"))
-# Mod <- readRDS(Mod, file = paste0("fr-tot_Mod_ar1",Sys.Date(),".rds"))
-# Mod <- readRDS(Mod, file = paste0("fr-tot_Mod_ar12024-03-13.rds"))
+Mod <- readRDS(Mod, file = paste0("fr-tot_Mod_ar1_b2024-03-14.rds"))
 
 sanity(Mod_n)
 sanity(Mod_s)
@@ -246,11 +246,10 @@ ggplot(aes(year, exp(coef.est), color = model)) +
 
 
 ```{r predictions year}
-
 # Predict on grid, for indices and maps
 nd_pred_grid <- pred_grid |>
-  #filter(!year == 2015 ) |>
-  filter(!year %in% c(2015,2016) ) |>
+  #filter(year == 2015 ) |>
+  #filter(year %in% c(2015,2016) ) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
          doy_sc = 0,
          pred_length_sc = 0)
@@ -265,14 +264,108 @@ nd_pred_grid <- pred_grid |>
 # 
 
 # Make temporal index!
+```
+
+
+```{r predictions year}
+nd_pred_grid <- pred_grid |>
+  filter(year > 2020 ) |>
+  #filter(year %in% c(2015:2018) ) |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         doy_sc = 0,
+         pred_length_sc = 0)
+
+ncells1 <- filter(nd_pred_grid_1, year == max(nd_pred_grid_1$year)) |> nrow()
+
+# model spte
+time <- Sys.time()
+plan(multisession, workers = 3)
+index_spte <- future_map_dfr(unique(nd_pred_grid_1$year), \(y) { # backslash means function
+  nd <- nd_pred_grid_1 |> filter( year == y )
+  p <- predict(Mod, newdata = nd, return_tmb_object = TRUE)
+  get_index(p, area = 1/ncells1, bias_correct = TRUE)
+})
+plan(sequential)
+Sys.time() - time
+
+
+nd_pred_grid_2 <- pred_grid |>
+  filter(year < 1994 ) |>
+  #filter(year %in% c(2015:2018) ) |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         doy_sc = 0,
+         pred_length_sc = 0)
+
 ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
 
-index <- lapply(unique(nd_pred_grid$year), \(y) {
-  #nd <- replicate_df(pred_grid, "year", y)
-  p <- predict(Mod, newdata = nd_pred_grid, return_tmb_object = TRUE)
-  get_index(p, area = rep(1/ncells, nrow(p$data)), bias_correct = TRUE)
-})
-index <- do.call(rbind, index)
+time <- Sys.time()
+plan(multisession, workers = 2)
+ind < nd_pred_grid |>
+  split(nd_pred_grid$year) |>
+  future_map(\(nd) predict(Mod_n, newdata = nd, return_tmb_object = TRUE)) |>
+  future_map(\(pr) get_index(pr, area = 1/ncells, bias_correct = TRUE)) |>
+  list_rbind()
+plan(sequential)
+Sys.time() - time
+
+# time <- proc.time()
+# #plan(multisession, workers = 2)
+# prdi <- nd_pred_grid |>
+#     split(nd_pred_grid$year) |>
+#     #purrr::set_names() |>
+#     map(\(nd) predict(Mod_n, newdata = nd, return_tmb_object = TRUE)) |>
+#     
+# irdi <- names(prdi) |>
+#    split(names(prdi) |>
+#     lmap(\(prdi) get_index(prdi, area = 1/ncells, bias_correct = TRUE))  #prdi$year
+#     #future_map(\(pr) get_index(pr, area = 1/ncells, bias_correct = TRUE)) |>
+#   #list()#(names_to = "year")
+# #plan(sequential)
+# proc.time() - time
+# names(prdi)
+# p$
+# fh<-list(prdi, prdi)
+# str(fh)
+#   # TODO nd <- nd_pred_grid_2 |> filter( year == y )
+# p <- predict(Mod_n, newdata = nd_pred_grid, return_tmb_object = TRUE)
+#   get_index(p, area = 1/ncells2, bias_correct = TRUE)
+
+
+# # model n
+# time <- Sys.time()
+# index_n <- map_dfr(unique(nd_pred_grid$year), \(y) { # backslash means function
+#   nd <- nd_pred_grid |> filter( year == y )
+#   p <- predict(Mod_n, newdata = nd, return_tmb_object = TRUE)
+#   get_index(p, area = 1/ncells, bias_correct = TRUE)
+# })
+# Sys.time() - time
+# 
+# time <- Sys.time()
+# plan(multisession, workers = 4)
+# index_n <- future_map_dfr(unique(nd_pred_grid$year), \(y) { # backslash means function
+#   nd <- nd_pred_grid |> filter( year == y )
+#   p <- predict(Mod_n, newdata = nd, return_tmb_object = TRUE)
+#   get_index(p, area = 1/ncells, bias_correct = TRUE)
+# })
+# plan(sequential)
+# Sys.time() - time
+# # 
+# 
+# ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
+# 
+# 
+# pred_Mod <- predict(Mod_n, newdata = nd_pred_grid, return_tmb_object = TRUE) # TRUE returns a report from TMB in the 
+# index <- get_index(Pred_Mod, area = rep(1/ncells, nrow(Pred_Mod$data)), bias_correct = TRUE)
+# 
+index_s  |>
+  ggplot(aes(year, est)) +
+  geom_line() +
+  geom_point(shape = 21, alpha = 0.7) +
+  geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0)
+```
+
+
+```{r predictions year}
 # time <- Sys.time() #crash/error?
 # index_tot <- get_index(pred_Mod, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
 # Sys.time() - time
