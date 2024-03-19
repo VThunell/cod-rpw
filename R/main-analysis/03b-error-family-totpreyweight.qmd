@@ -14,7 +14,7 @@ editor: source
 execute: 
   echo: true
   eval: true
-  cache: true
+  cache: false
 ---
 
 ## Load libraries
@@ -86,8 +86,9 @@ We need to cut off the feeding rations to remove likely erroneous data. The fedd
 ```{r}
 
 df_tot <- df |>
-  filter( !is.na(day_of_year) ) |>
-  filter(fr_tot > 0 & fr_tot <= 0.5)
+  filter( !is.na(day_of_year),
+          fr_tot > 0,
+          tot > 0)
 
 # below fr = 1
 df_tot |>
@@ -97,19 +98,19 @@ df_tot |>
 
 # below fr = 0.11,
 df_tot |>
-  filter( fr_tot > 0 & fr_tot <= .11) |>
+  filter( fr_tot <= .11) |>
   dplyr::select(tot) |>
   ggplot(aes(tot)) +
   geom_histogram(bins = 100) +
   stat_function(fun=dgamma, args=list(shape=0.5, rate=1))
 
-df |>
-  filter( fr_tot > 0 & fr_tot <= 0.5) |>
+df_tot |>
+  filter( fr_tot <= 0.5) |>
   rowwise() |> 
-  mutate(tot = sum(other, other_invert, benth_fish, other_fish, saduria, sprat, herring),
-         decade = round(year/10) * 10) |>
+  mutate(decade = round(year/10) * 10) |>
   ggplot(aes(pred_length_sc, tot, color = decade)) +
   geom_point() +
+  labs(title = "fr > 0.5") +
   stat_smooth(method = "gam", formula = y ~ s(x, k=3))
 
 ```
@@ -130,7 +131,7 @@ df_95 <- df_tot |>
 quantile(df_tot$fr_tot, 0.99) 
 # # remove feeding ratios above the 99th percentile 
 df_99 <- df_tot |>
-  filter(fr_tot <= 0.33)
+  filter(fr_tot <= 0.37)
 
 df_99 |>
   dplyr::select(tot) |>
@@ -193,9 +194,9 @@ r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples 
 length(which(is.infinite(r_df$res)))/length(r_df$res)
 
 ggplot(r_df, aes(sample = res)) +
-  stat_qq() +
+  stat_qq(shape = 1) +
   stat_qq_line() +
-  facet_wrap(~typer) +
+  facet_wrap(~typer, ncol = 2) +
   labs(y = "Sample Quantiles", x = "Theoretical Quantiles",  title = "Gamma")
  
 ```
@@ -262,9 +263,9 @@ r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples 
 length(which(is.infinite(r_df$res)))/length(r_df$res) * 100
 
 ggplot(r_df, aes(sample = res)) +
-  stat_qq() +
+  stat_qq(shape = 1) +
   stat_qq_line() +
-  facet_wrap(~typer) +
+  facet_wrap(~typer, ncol = 2) +
   labs(y = "Sample Quantiles", x = "Theoretical Quantiles", title = "lognormal")
 
 ```

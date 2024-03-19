@@ -79,7 +79,8 @@ df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
          year_f = as.factor(year),
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
-         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length)
+         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
+         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)
 ) 
 
 glimpse(df)
@@ -101,8 +102,7 @@ plot_map +
 df_tot <- df |>
  filter( fr_tot > 0 & fr_tot <= 0.37) |>
  filter( !is.na(day_of_year) ) |>
- mutate(doy_sc = (day_of_year - mean(day_of_year))/sd(day_of_year),
-        decade = round(year/10) * 10)
+ mutate(decade = round(year/10) * 10)
 
 # mesh
 mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
@@ -119,6 +119,7 @@ df_tot |>
   ggplot(aes(pred_length,fr_tot, color = year)) +
   geom_point()
 
+# 3rd quantile of the fr over time and pred length 
 ```
 
 # We suspect that the amount of food in relation to cod weight in stomachs is decreasing and depends on predator length:
@@ -245,7 +246,8 @@ ggplot(aes(year, exp(coef.est), color = model)) +
 ```
 
 
-```{r predictions year}
+```{r predictions year using Mod_s}
+
 # Predict on grid, for indices and maps
 nd_pred_grid <- pred_grid |>
   #filter(year == 2015 ) |>
@@ -254,82 +256,64 @@ nd_pred_grid <- pred_grid |>
          doy_sc = 0,
          pred_length_sc = 0)
 
-# time <- Sys.time()
-# pred_Mod <- predict(Mod, newdata = nd_pred_grid, return_tmb_object = TRUE) # TRUE returns a report from TMB in the output
-# Sys.time() - time
+pred_Mod <- predict(Mod_s, newdata = nd_pred_grid, return_tmb_object = TRUE) # TRUE returns a report from TMB in the output
 
-# time <- Sys.time()
-# #pred_Mod_s <- predict(Mod, newdata = nd_pred_grid, nsim = 250) # måste ha TRUE här!!
-# Sys.time() - time
-# 
+pred_Mod_s <- predict(Mod_s, newdata = nd_pred_grid, nsim = 250) # måste ha TRUE här!!
 
-# Make temporal index!
 ```
 
 
 ```{r predictions year}
-nd_pred_grid <- pred_grid |>
-  filter(year > 2020 ) |>
-  #filter(year %in% c(2015:2018) ) |>
-  mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         doy_sc = 0,
-         pred_length_sc = 0)
-
-ncells1 <- filter(nd_pred_grid_1, year == max(nd_pred_grid_1$year)) |> nrow()
-
-# model spte
-time <- Sys.time()
-plan(multisession, workers = 3)
-index_spte <- future_map_dfr(unique(nd_pred_grid_1$year), \(y) { # backslash means function
-  nd <- nd_pred_grid_1 |> filter( year == y )
-  p <- predict(Mod, newdata = nd, return_tmb_object = TRUE)
-  get_index(p, area = 1/ncells1, bias_correct = TRUE)
-})
-plan(sequential)
-Sys.time() - time
-
-
-nd_pred_grid_2 <- pred_grid |>
-  filter(year < 1994 ) |>
-  #filter(year %in% c(2015:2018) ) |>
-  mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         doy_sc = 0,
-         pred_length_sc = 0)
-
-ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
-
-time <- Sys.time()
-plan(multisession, workers = 2)
-ind < nd_pred_grid |>
-  split(nd_pred_grid$year) |>
-  future_map(\(nd) predict(Mod_n, newdata = nd, return_tmb_object = TRUE)) |>
-  future_map(\(pr) get_index(pr, area = 1/ncells, bias_correct = TRUE)) |>
-  list_rbind()
-plan(sequential)
-Sys.time() - time
-
+# nd_pred_grid <- pred_grid |>
+#   filter(year > 2020 ) |>
+#   #filter(year %in% c(2015:2018) ) |>
+#   mutate(depth_sc = (depth - mean(depth))/sd(depth),
+#          doy_sc = 0,
+#          pred_length_sc = 0)
+# 
+# ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
+# 
 # time <- proc.time()
 # #plan(multisession, workers = 2)
-# prdi <- nd_pred_grid |>
-#     split(nd_pred_grid$year) |>
-#     #purrr::set_names() |>
-#     map(\(nd) predict(Mod_n, newdata = nd, return_tmb_object = TRUE)) |>
-#     
-# irdi <- names(prdi) |>
-#    split(names(prdi) |>
-#     lmap(\(prdi) get_index(prdi, area = 1/ncells, bias_correct = TRUE))  #prdi$year
-#     #future_map(\(pr) get_index(pr, area = 1/ncells, bias_correct = TRUE)) |>
-#   #list()#(names_to = "year")
+# ind <- nd_pred_grid |>
+#   split(nd_pred_grid$year) |>
+#   map(\(nd) predict(Mod_n, newdata = nd, return_tmb_object = TRUE)) |>
+#   map(\(pr) get_index(pr, area = 1/ncells, bias_correct = TRUE)) |>
+#   list_rbind()
 # #plan(sequential)
 # proc.time() - time
-# names(prdi)
-# p$
-# fh<-list(prdi, prdi)
-# str(fh)
-#   # TODO nd <- nd_pred_grid_2 |> filter( year == y )
-# p <- predict(Mod_n, newdata = nd_pred_grid, return_tmb_object = TRUE)
-#   get_index(p, area = 1/ncells2, bias_correct = TRUE)
 
+time <- proc.time()
+ps = data.frame()
+for (i in 1990:2022) {
+
+  nd_pred_grid <- pred_grid |>
+  filter( year %in% i ) |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         doy_sc = 0,
+         pred_length_sc = 0)
+
+  prdi <- nd_pred_grid |>
+      split(nd_pred_grid$year) |>
+      map(\(nd) predict(Mod, newdata = nd, return_tmb_object = TRUE))
+
+  irdi <- prdi |>
+      map(\(x) get_index(x, area = 1/ncells, bias_correct = TRUE)) |>
+    #future_map(\(pr) get_index(pr, area = 1/ncells, bias_correct = TRUE)) |>
+      list_rbind()#lmap(get_index, area = 1/ncells, bias_correct = TRUE)  
+# for two consequitive years, the predictions take 180 sec and the index 5500 sec. 
+
+ps <- bind_rows(ps,irdi) # ad
+
+# for (i in 1:n) {
+#     # ... make some data
+#     dat <- data.frame(x = rnorm(10), y = runif(10))
+#     dat$i <- i  # maybe you want to keep track of which iteration produced it?
+#     datalist[[i]] <- dat # ad
+  gc()
+}
+
+proc.time() - time  
 
 # # model n
 # time <- Sys.time()
@@ -357,7 +341,7 @@ Sys.time() - time
 # pred_Mod <- predict(Mod_n, newdata = nd_pred_grid, return_tmb_object = TRUE) # TRUE returns a report from TMB in the 
 # index <- get_index(Pred_Mod, area = rep(1/ncells, nrow(Pred_Mod$data)), bias_correct = TRUE)
 # 
-index_s  |>
+ps  |>
   ggplot(aes(year, est)) +
   geom_line() +
   geom_point(shape = 21, alpha = 0.7) +
@@ -370,7 +354,7 @@ index_s  |>
 # index_tot <- get_index(pred_Mod, area = rep(1/ncells, nrow(pred_Mod$data)), bias_correct = TRUE)
 # Sys.time() - time
 
-saveRDS(index_tot, file = paste0("index_fr-tot_Mod_ar1",Sys.Date(),".rds"))
+# saveRDS(index_tot, file = paste0("index_fr-tot_Mod_ar1",Sys.Date(),".rds"))
 
 # time <- Sys.time()
 # index_tot_s <- get_index_sims(pred_Mod_s, area = rep(1/ncells, nrow(pred_Mod_s)))
@@ -384,99 +368,99 @@ saveRDS(index_tot, file = paste0("index_fr-tot_Mod_ar1",Sys.Date(),".rds"))
 
 
 ```{r plot predictions year}
-index_tot |>
-# bind_rows(index_tot |> mutate(method = "regular"),
-#           index_tot_s |> mutate(method = "simul"))  |>
-  ggplot(aes(year, est) ) +#, fill = method)) +
-  geom_point(shape = 21, alpha = 0.7) +
-  #scale_fill_manual(values = c("white", "grey10")) +
-  #facet_wrap(~method, scales = "fixed") +
-  geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0)
+# index_tot |>
+# # bind_rows(index_tot |> mutate(method = "regular"),
+# #           index_tot_s |> mutate(method = "simul"))  |>
+#   ggplot(aes(year, est) ) +#, fill = method)) +
+#   geom_point(shape = 21, alpha = 0.7) +
+#   #scale_fill_manual(values = c("white", "grey10")) +
+#   #facet_wrap(~method, scales = "fixed") +
+#   geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0)
 ```
 
 Predictions based on spatial model #(spatiotemporal predictions makes R crash or takes too mcuh time)
 
 ```{r predictions pred length Mod}
 
-# Predict on grid, for indices and maps
-nd_sm_pred_grid <- pred_grid |>
-  mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         doy_sc = 0,
-         pred_length_sc = (15 - mean(df$pred_length))/sd(df$pred_length))
-nd_la_pred_grid <- pred_grid |>
-  mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         doy_sc = 0,
-         pred_length_sc = (55 - mean(df$pred_length))/sd(df$pred_length))
-
-pred_Mod_m <- predict(Mod_s, newdata = nd_pred_grid, return_tmb_object = TRUE)
-pred_Mod_sm <- predict(Mod_s, newdata = nd_sm_pred_grid, return_tmb_object = TRUE)
-pred_Mod_la <- predict(Mod_s, newdata = nd_la_pred_grid, return_tmb_object = TRUE)
-
-# Make temporal index!
-ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
-#??sdmTMB:predict
-
-index_tot_sm <- get_index(pred_Mod_sm, area = rep(1/ncells, nrow(pred_Mod_sm$data)), bias_correct = TRUE)
-index_tot_la <- get_index(pred_Mod_la, area = rep(1/ncells, nrow(pred_Mod_la$data)), bias_correct = TRUE)
-index_tot_m <- get_index(pred_Mod_m, area = rep(1/ncells, nrow(pred_Mod_m$data)), bias_correct = TRUE)
-
-bind_rows(index_tot_sm |> mutate(length = "15"),
-          index_tot_m |> mutate(length = "36, mean"),
-          index_tot_la |> mutate(length = "55"))  |> 
-  ggplot(aes(year, est, color = length)) +
-  geom_line() +
-  #geom_ribbon(aes(ymin = lwr, ymax = upr, alpha = 0.3)) +
-  #scale_fill_manual(values = c("white", "grey10")) +
-  scale_x_continuous(breaks = seq(min(index_tot_sm$year), max(index_tot_sm$year), by = 10)) + 
-  ggtitle("predicted est (not simulated)")
-  #facet_wrap(~method, scales = "fixed") + 
-  geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0) 
+# # Predict on grid, for indices and maps
+# nd_sm_pred_grid <- pred_grid |>
+#   mutate(depth_sc = (depth - mean(depth))/sd(depth),
+#          doy_sc = 0,
+#          pred_length_sc = (15 - mean(df$pred_length))/sd(df$pred_length))
+# nd_la_pred_grid <- pred_grid |>
+#   mutate(depth_sc = (depth - mean(depth))/sd(depth),
+#          doy_sc = 0,
+#          pred_length_sc = (55 - mean(df$pred_length))/sd(df$pred_length))
+# 
+# pred_Mod_m <- predict(Mod_s, newdata = nd_pred_grid, return_tmb_object = TRUE)
+# pred_Mod_sm <- predict(Mod_s, newdata = nd_sm_pred_grid, return_tmb_object = TRUE)
+# pred_Mod_la <- predict(Mod_s, newdata = nd_la_pred_grid, return_tmb_object = TRUE)
+# 
+# # Make temporal index!
+# ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
+# #??sdmTMB:predict
+# 
+# index_tot_sm <- get_index(pred_Mod_sm, area = rep(1/ncells, nrow(pred_Mod_sm$data)), bias_correct = TRUE)
+# index_tot_la <- get_index(pred_Mod_la, area = rep(1/ncells, nrow(pred_Mod_la$data)), bias_correct = TRUE)
+# index_tot_m <- get_index(pred_Mod_m, area = rep(1/ncells, nrow(pred_Mod_m$data)), bias_correct = TRUE)
+# 
+# bind_rows(index_tot_sm |> mutate(length = "15"),
+#           index_tot_m |> mutate(length = "36, mean"),
+#           index_tot_la |> mutate(length = "55"))  |> 
+#   ggplot(aes(year, est, color = length)) +
+#   geom_line() +
+#   #geom_ribbon(aes(ymin = lwr, ymax = upr, alpha = 0.3)) +
+#   #scale_fill_manual(values = c("white", "grey10")) +
+#   scale_x_continuous(breaks = seq(min(index_tot_sm$year), max(index_tot_sm$year), by = 10)) + 
+#   ggtitle("predicted est (not simulated)")
+#   #facet_wrap(~method, scales = "fixed") + 
+#   geom_errorbar(aes(ymin = lwr, ymax = upr), alpha = 0.4, width = 0) 
 
 ```
 
 
 ```{r}
 
-plot_map_fc +
-  #geom_point(data = pred_Mod$data, aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
-  geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
-  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
-  facet_wrap(~year) +
-  theme_sleek(base_size = 6) + 
-  geom_sf() +
-  ggtitle("all effects")
-
-plot_map_fc +
-  geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = exp(est_non_rf)), alpha = 0.5) +
-  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
-  facet_wrap(~year) +
-  theme_sleek(base_size = 6) + 
-  geom_sf() + 
-  ggtitle("fixed effects")
-
-plot_map_fc +
-  geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = est_rf), alpha = 0.5) +
-  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
-  facet_wrap(~year) +
-  theme_sleek(base_size = 6) + 
-  geom_sf() +
-  ggtitle("random effects")
-
-plot_map_fc +
-  geom_point(data = pred_Mod$data |> filter(year == 1993), aes(X*1000, Y*1000, color = omega_s), alpha = 0.5) +
-  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
-  facet_wrap(~year) +
-  theme_sleek(base_size = 6) + 
-  geom_sf() +
-  ggtitle("spatial random effects")
-
-plot_map_fc +
-  geom_point(data = pred_Mod$data |> filter( year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = epsilon_st), alpha = 0.5) +
-  #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
-  facet_wrap(~year) +
-  theme_sleek(base_size = 6) + 
-  geom_sf() +
-  ggtitle("spatialtemporal random effects")
+# plot_map_fc +
+#   #geom_point(data = pred_Mod$data, aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+#   geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+#   #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+#   facet_wrap(~year) +
+#   theme_sleek(base_size = 6) + 
+#   geom_sf() +
+#   ggtitle("all effects")
+# 
+# plot_map_fc +
+#   geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = exp(est_non_rf)), alpha = 0.5) +
+#   #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+#   facet_wrap(~year) +
+#   theme_sleek(base_size = 6) + 
+#   geom_sf() + 
+#   ggtitle("fixed effects")
+# 
+# plot_map_fc +
+#   geom_point(data = pred_Mod$data |> filter(year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = est_rf), alpha = 0.5) +
+#   #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+#   facet_wrap(~year) +
+#   theme_sleek(base_size = 6) + 
+#   geom_sf() +
+#   ggtitle("random effects")
+# 
+# plot_map_fc +
+#   geom_point(data = pred_Mod$data |> filter(year == 1993), aes(X*1000, Y*1000, color = omega_s), alpha = 0.5) +
+#   #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+#   facet_wrap(~year) +
+#   theme_sleek(base_size = 6) + 
+#   geom_sf() +
+#   ggtitle("spatial random effects")
+# 
+# plot_map_fc +
+#   geom_point(data = pred_Mod$data |> filter( year %in% seq(1965, 2022, by = 3)), aes(X*1000, Y*1000, color = epsilon_st), alpha = 0.5) +
+#   #geom_point(data = pred_Mod$data |> filter(year == 1990), aes(X*1000, Y*1000, color = exp(est)), alpha = 0.5) +
+#   facet_wrap(~year) +
+#   theme_sleek(base_size = 6) + 
+#   geom_sf() +
+#   ggtitle("spatialtemporal random effects")
 
 ```
 <!-- ```{r plot prediction} -->

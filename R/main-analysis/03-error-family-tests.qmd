@@ -1,5 +1,5 @@
 ---
-title: "Testing observation error families and feeding ratio cutoffs"
+title: "Feeding ratio. Observation error families and fr cutoffs"
 author: "Viktor Thunell"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 format: 
@@ -14,7 +14,7 @@ editor: source
 execute: 
   echo: true
   eval: true
-  cache: true
+  cache: false
 ---
 
 ## Load libraries
@@ -70,8 +70,11 @@ df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
          year_f = as.factor(year),
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
-         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length)
-) 
+         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
+         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |> 
+  rowwise() |> 
+  mutate(tot = sum(other, other_invert, benth_fish, other_fish, saduria, sprat, herring)
+)
 
 glimpse(df)
 
@@ -83,19 +86,18 @@ Fit with gamma. Sometimes stomachs are very full in relation to predator weight.
 
 ```{r gamma 95 vs 99}
 # remove empty stomachs for fr-tot model and shorten time series to redu e fiiting time
-df_noz <- df |>
- filter( fr_tot > 0) |>
- filter( !is.na(day_of_year) ) |>
- mutate(doy_sc = (day_of_year - mean(day_of_year))/sd(day_of_year) )
+df_fr <- df |>
+ filter( fr_tot > 0,
+         !is.na(day_of_year) )
 
-quantile(df_noz$fr_tot, 0.95) 
+quantile(df_fr$fr_tot, 0.95) 
 # # remove feeding ratios above the 95th percentile 
-df_95 <- df_noz |>
+df_95 <- df_fr |>
   filter(fr_tot <= 0.11)
 
-quantile(df_noz$fr_tot, 0.99) 
+quantile(df_fr$fr_tot, 0.99) 
 # # remove feeding ratios above the 99th percentile 
-df_99 <- df_noz |>
+df_99 <- df_fr |>
   filter(fr_tot <= 0.3)
 
 df_99 |>
@@ -150,16 +152,17 @@ AIC(Mod_n_99)
 res_Mod_n_95 <- mcmc_res <- residuals(Mod_n_95, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_95, mcmc_iter = 201, mcmc_warmup = 200))
 res_Mod_n_99 <- mcmc_res <- residuals(Mod_n_99, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_99, mcmc_iter = 201, mcmc_warmup = 200))
 
-#rq_res <- rq_res[is.finite(rq_res)] # some Inf
+r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95),  typer = "mcmc_95"),
+                  data_frame(res = residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99),  typer = "mcmc_99"),
+                  data_frame(res = residuals(Mod_n_95),  typer = "reg_95"),
+                  data_frame(res = residuals(Mod_n_99),  typer = "reg_99"))
 
-qqnorm(residuals(Mod_n_95), main="regular 95")
-qqline(residuals(Mod_n_95))
-qqnorm(residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95), main="mcmc 95")
-qqline(residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95))
-qqnorm(residuals(Mod_n_99), main="regular 99")
-qqline(residuals(Mod_n_99))
-qqnorm(residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99), main="mcmc 95")
-qqline(residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99))
+ggplot(r_df, aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~typer) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles",  title = "Gamma")
+
 
 ```
 The gamma can produce a nice fit if high fr are left out and we use reular and not mcmc based resudiuls. I need to reevaluate my choice of family. A cutoff of 0.37 (99th perc.) creates non finite residual values using the gamma which a cutoff of 0.3 does not. If I were to g with gamma family, I chose 0.3 as a cutoff which is somewhere in between the 98th and 99th percentile as this includes uncommon high fr-values without producing infinite residual values. A higher percentile seems to produce a somewhat beter fit. *And what a difference using mcmc instead of the regular ones*.
@@ -167,29 +170,7 @@ The gamma can produce a nice fit if high fr are left out and we use reular and n
 ## Lognormal 
 Now compare with lognormal...
 
-
 ```{r lognormal 95 vs 99}
-# remove empty stomachs for fr-tot model and shorten time series to redu e fiiting time
-df_noz <- df |>
- filter( fr_tot > 0) |>
- filter( !is.na(day_of_year) ) |>
- mutate(doy_sc = (day_of_year - mean(day_of_year))/sd(day_of_year) )
-
-quantile(df_noz$fr_tot, 0.95) 
-# # remove feeding ratios above the 95th percentile 
-df_95 <- df_noz |>
-  filter(fr_tot <= 0.11)
-
-quantile(df_noz$fr_tot, 0.99) 
-# # remove feeding ratios above the 99th percentile 
-df_99 <- df_noz |>
-  filter(fr_tot <= 0.37) # this differs from the gamma
-
-df_99 |>
-  dplyr::select(fr_tot) |>
-  ggplot(aes(fr_tot)) +
-  geom_histogram(bins = 100)
- 
 # 95th percentile model
 mesh <- make_mesh(df_95, c("X", "Y"), cutoff = 6)
 # missing years
@@ -236,14 +217,35 @@ AIC(Mod_n_99)
 res_Mod_n_95 <- mcmc_res <- residuals(Mod_n_95, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_95, mcmc_iter = 201, mcmc_warmup = 200))
 res_Mod_n_99 <- mcmc_res <- residuals(Mod_n_99, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_99, mcmc_iter = 201, mcmc_warmup = 200))
 
+r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95),  typer = "mcmc_95"),
+                  data_frame(res = residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99),  typer = "mcmc_99"),
+                  data_frame(res = residuals(Mod_n_95),  typer = "reg_95"),
+                  data_frame(res = residuals(Mod_n_99),  typer = "reg_99"))
+
+
+ggplot(r_df, aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~typer) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles",  title = "Lognormal")
+
+```
+The log normal makes for a way better fit and again, a higher cutoff seems better than a lower. I switch to log normal and use th 99th percentile (fr cutoff = 0.37).
+
+## Appendix. ggplot + stat_qq vs qqnorm()
+
+Does plotting approach affect visual interpretation... not really, but squeezing four facets on the same space as one qqnorm makes it a bit harder to see the patterns. 
+
+```{r}
+r_df |>
+  filter(typer == "reg_95") |>
+  ggplot( aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles",  title = "Lognormal")
+
 qqnorm(residuals(Mod_n_95), main="regular 95")
 qqline(residuals(Mod_n_95))
-qqnorm(residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95), main="mcmc 95")
-qqline(residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95))
-qqnorm(residuals(Mod_n_99), main="regular 99")
-qqline(residuals(Mod_n_99))
-qqnorm(residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99), main="mcmc 99")
-qqline(residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99))
 ```
-The log normal makes for a way better fit and again, a higher cutoff seems better than a lower. I switch to log normal and use th 99th percentile (fr cutoff = 0.37). And since so much of the data is included in the model, i dont know if a student with logged data is necessary?
+
 
