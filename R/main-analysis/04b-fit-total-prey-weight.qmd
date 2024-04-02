@@ -1,5 +1,5 @@
 ---
-title: "Day of the year effects on feeding ratio varying with time"
+title: "Total prey weight model fit"
 author: "Viktor Thunell (& Max)"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 format: 
@@ -95,7 +95,7 @@ plot_map +
 
 ## Filter
 
-```{r}
+```{r filter}
 
 # remove empty stomachs and day of year that are NA
 df_tot <- df |>
@@ -247,7 +247,7 @@ ggplot(aes(year, exp(coef.est), color = model)) +
 ```
 
 
-```{r}
+```{r index}
 nd_pred_grid <- pred_grid |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
          doy_sc = 0,

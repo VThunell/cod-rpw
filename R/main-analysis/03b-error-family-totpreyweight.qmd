@@ -52,7 +52,7 @@ home <- here::here()
 
 ```
 
-Read data
+### Read data
 
 ```{r}
 #| message: false
@@ -81,7 +81,7 @@ glimpse(df)
 
 ## Background
 
-We need to cut off the feeding rations to remove likely erroneous data. The fedding rations can however be high, fish can eat big prey. So where do we place the cutoff? And which of gamma and lognormal best represent the data?
+We need to cut off the feeding rations to remove likely erroneous data. The feeding ratios can however be high, fish can eat big prey. So where do we place the cutoff? And which of gamma and lognormal best represent the data?
 
 ```{r}
 
@@ -101,8 +101,7 @@ df_tot |>
   filter( fr_tot <= .11) |>
   dplyr::select(tot) |>
   ggplot(aes(tot)) +
-  geom_histogram(bins = 100) +
-  stat_function(fun=dgamma, args=list(shape=0.5, rate=1))
+  geom_histogram(bins = 100)
 
 df_tot |>
   filter( fr_tot <= 0.5) |>

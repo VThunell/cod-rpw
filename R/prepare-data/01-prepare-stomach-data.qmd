@@ -169,7 +169,7 @@ d <- left_join(prey, pred, by = c(comcol_prey_pred))
 
 ## Calculate total weight of specific prey species by unique predator ID
 
-Next we need to summarize our prey weights by predator and prey group. First filter stomachs where these prey (herring, sprat and saduria) are present. Create a new common name column to make life easier... 
+Next we need to summarize our prey weights by predator and prey group. 
 
 ```{r}
 #| message: false
@@ -181,7 +181,7 @@ Next we need to summarize our prey weights by predator and prey group. First fil
 #          common_prey_name = ifelse(AphiaIDPrey %in% c(293511, 119034), "saduria", common_prey_name),
 #          common_prey_name = ifelse(!AphiaIDPrey %in% c(293743, 1625944, 126425, 322683, 236448, 126417, 293511, 119034), "other", common_prey_name))
 
-agg_prey <- d |> 
+agg_prey <- d |> # isopoda may cause issues
   mutate(prey_class = NA,
          prey_class = ifelse(AphiaIDPrey %in% c(120113,130735,101744,101156,104152,101537,107552,110487, 101160,103079,103077,119822,120136,103251,102101,120120,141579,140480,120115,101361,144129,104165,883,103068,104878,1078,104517,104241,1066,51,1135,234024,326114,149668,882,106782,106674,105,1248,101063,107614,152302,140430, 107032,138999,138081,102292,107613), "other_invert", prey_class),
          prey_class = ifelse(AphiaIDPrey %in% c(293511, 119034), "saduria", prey_class), 
@@ -191,7 +191,8 @@ agg_prey <- d |>
          prey_class = ifelse(AphiaIDPrey %in% c(125464, 125716), "unid_clupeids", prey_class),
          prey_class = ifelse(AphiaIDPrey %in% c(126752, 126505, 126736, 125516), "other_fish", prey_class),
          prey_class = ifelse(!prey_class %in% c("other_invert", "saduria", "benth_fish", "herring", "sprat", "other_fish", "unid_clupeids"), "other", prey_class)) # NOTE, "clupea" and"clupeidea" etc. are "other"
-
+agg_prey |>
+  filter(prey_class == "other")
 # fixing "unid_clupeids" below 
 table(agg_prey$prey_class) 
 
@@ -534,7 +535,7 @@ SE_wide2 <- SE_wide %>%
          other = stone + stone_2 + plastic + plastics + sand + wood + carbon + carbon_2 + wood_2 + litter_plastics + sand_2 + algae + aglae + waste + remains + remains_2 + digestive_tract + mucus + mucus_2 + na,
          other_fish = pisces + pisces_2 +  + engraulis_encrasicolus + gasterosteus_aculeatus + scales + scales_2 + scomber_scombrus + pungitius_pungitius + ammodytidae + gasterosteidae)
 
-SE_wide2 <- SE_wide2 |> 
+SE_wide2 <- SE_wide2 |> # slpitting clupeids into equal parts sprat and herring
   mutate(sprat = sprat + unid_clupeids*0.5,
          herring = herring + unid_clupeids*0.5) |> 
   dplyr::select(!unid_clupeids)
@@ -714,19 +715,30 @@ df <- newold3 |>
          year = Year,
          month = Month) |> 
   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
-  dplyr::select(pred_ID, herring, saduria, sprat, other, other_invert, other_fish, benth_fish, fr_tot, fr_sad, fr_spr, fr_her, fr_other, fr_other_invert, fr_benth_fish, fr_other_fish, year, month, day_of_year, pred_weight, pred_length, saduria, sprat, herring, lat, lon, ices_rect, X, Y)#, depth)
+  dplyr::select(pred_ID, herring, saduria, sprat, other, other_invert, other_fish, benth_fish, fr_tot, fr_sad, fr_spr, fr_her, fr_other, fr_other_invert, fr_benth_fish, fr_other_fish, year, month, day_of_year, pred_weight, pred_length, pred_weight_source, saduria, sprat, herring, lat, lon, ices_rect, X, Y, data_source, Country)#, depth)
 
 # Add sample size per coordinate for plotting
 df_plot <- df |>
   group_by(year, Y, X) |> 
   mutate(sample_size = n(),
-         pos_id = paste(year, X, Y)) |> 
+         pos_id = paste(year, X, Y),
+         decade = round(year/10) * 10) |> 
   ungroup() |> 
   distinct(pos_id, .keep_all = TRUE)
+
+# df_plot <- df |>
+#   filter(year == 2007) |>
+#   group_by(Y, X) |> 
+#   mutate(sample_size = n(),
+#          pos_id = paste(year, X, Y)) |> 
+#   ungroup() |> 
+#   distinct(pos_id, .keep_all = TRUE)
   
 plot_map_fc +
   geom_point(data = df_plot, aes(X*1000, Y*1000, size = sample_size), alpha = 0.5) +
-  facet_wrap(~ year, ncol = 6) +
+  #facet_wrap(~ year, ncol = 6) +
+  facet_wrap(~ decade, ncol = 4) +
+  #facet_wrap(Country ~ data_source , ncol = 6) +
   #theme_sleek(base_size = 6) + 
   theme(legend.position = "bottom",
         axis.text.x = element_text(angle = 90)) +
@@ -763,20 +775,20 @@ df |>
 
 hist(df$depth)
 
-plot_map_fc +
-  geom_point(data = df, aes(X*1000, Y*1000, color = depth), alpha = 0.5) +
-  theme_sleek(base_size = 6) + 
-  geom_sf()
-
 #remove points outside the baltic, i.e. the western most points in:
 df |>
   ggplot(aes(lon, lat, color = depth)) + 
   geom_point() + 
-  geom_vline(xintercept = 13)
+  geom_vline(xintercept = 13) +
   coord_sf()
 
 df <- df |>
   filter( lon > 13)
+
+plot_map_fc +
+  geom_point(data = df, aes(X*1000, Y*1000, color = depth), alpha = 0.5) +
+  theme_sleek(base_size = 6) + 
+  geom_sf()
 
 ```
 

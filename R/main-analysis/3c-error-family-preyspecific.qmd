@@ -1,0 +1,582 @@
+---
+title: "Specific prey weight. Observation error families"
+author: "Viktor Thunell"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: 
+  html:
+    page-layout: full
+    embed-resources: true
+knitr: 
+  opts_chunk:
+    fig.align: center
+    out-width: 80%
+editor: source
+execute: 
+  echo: true
+  eval: true
+  cache: false
+---
+
+## Load libraries
+
+```{r libs}
+#| message: false
+#| warning: false
+#| cache: false
+
+# Load libraries, install if needed
+pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "sdmTMBextra", "terra", "mapplots",
+          "viridis", "visreg", "modelr", "future", "kableExtra", "ggh4x", "patchwork") 
+
+if(length(setdiff(pkgs,rownames(installed.packages()))) > 0){
+
+    install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
+  
+  }
+
+invisible(lapply(pkgs, library, character.only = T))
+
+# Source code for map plots
+# You need:
+# devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
+options(ggplot2.continuous.colour = "viridis")
+#remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
+
+library(ggsidekick)
+theme_set(theme_sleek())
+
+# Set path
+home <- here::here()
+
+```
+
+### Read stomach data
+
+```{r}
+#| message: false
+#| warning: false
+#| cache: false
+
+df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         herring_sc = (herring - mean(herring))/sd(herring),
+         saduria_sc = (saduria - mean(saduria))/sd(saduria),          
+         sprat_sc = (sprat - mean(sprat))/sd(sprat),
+         other_invert_sc = (other_invert - mean(other_invert))/sd(other_invert),
+         other_sc = (other - mean(other))/sd(other),
+         other_fish_sc = (other_fish - mean(other_fish))/sd(other_fish),
+         benth_fish_sc = (benth_fish - mean(benth_fish))/sd(benth_fish),
+         year_f = as.factor(year),
+         month_f = as.factor(month),
+         ices_rect = as.factor(ices_rect),
+         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
+         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)
+) 
+
+glimpse(df)
+```
+
+## Background
+
+We need to cut off the feeding rations to remove likely erroneous data. In order to do that we keep for the total prey weight model, we keep 99 % of the data. I do the same here but do the fr cut off for each species. This seemingly helps model fiiting.
+
+### Filter
+
+```{r}
+dfqs <- df |>
+  filter(fr_tot > 0,
+         between(fr_spr, 0, 1),
+         between(fr_her, 0, 1),
+         between(fr_sad, 0, 1),
+         between(fr_other, 0, 1),
+         between(fr_other_invert, 0, 1),
+         between(fr_other_fish, 0, 1),
+         between(fr_benth_fish, 0, 1),
+         !is.na(day_of_year)) |>
+  select(starts_with("fr")) |>
+  map(\(sp) quantile(sp, c(0.95,0.98,0.99)))
+
+dfqs
+
+# filter remove empty stomachs, values above the 99th percentile and day of year that are NA
+df_prs <- df |>
+  filter(fr_tot > 0,
+         between(fr_spr, 0, signif(dfqs$fr_spr[3])),
+         between(fr_her, 0, signif(dfqs$fr_her[3])),
+         between(fr_sad, 0, signif(dfqs$fr_sad[3])),
+         between(fr_other, 0, signif(dfqs$fr_other[3])),
+         between(fr_other_invert, 0, signif(dfqs$fr_other_invert[3])),
+         between(fr_other_fish, 0, signif(dfqs$fr_other_fish[3])),
+         between(fr_benth_fish, 0, signif(dfqs$fr_benth_fish[3])),
+         !is.na(day_of_year)) |>
+  mutate(decade = round(year/10) * 10)
+
+```
+
+
+```{r}
+df_prs |> 
+  group_by(year) |> 
+  summarise(mean_fr_spr = mean(fr_spr),
+            mean_fr_her = mean(fr_her),
+            mean_fr_sad = mean(fr_sad),
+            mean_fr_other = mean(fr_other),
+            mean_fr_other_invert = mean(fr_other_invert),
+            mean_fr_other_fish = mean(fr_other_fish),
+            mean_fr_benth_fish = mean(fr_benth_fish)) |>
+  pivot_longer(cols = starts_with("mean_fr"), names_to = "pgroup", values_to = "mean_fr" ) |>
+  ggplot(aes(year, mean_fr, color = pgroup)) +
+  geom_line() +
+  facet_wrap(~pgroup) +
+  scale_x_continuous(breaks = seq(1965,2015, by = 15))
+
+df_prs |> 
+  pivot_longer(cols = starts_with("fr_"), names_to = "pgroup", values_to = "fr" ) |>
+  ggplot(aes(pred_length, fr, color = year))  +
+  geom_point() +
+  facet_wrap(~pgroup)
+  #stat_smooth(method = "gam", formula = y ~ s(x, k=3))
+
+df_prs |> 
+  filter(fr_tot < 0.05) |> 
+  #mutate(size_class = cut_width(pred_length, width = 20, boundary = 0)) |>
+  mutate(size_class = ifelse(pred_length < 20, "<20", 
+                             ifelse(pred_length > 50, ">50", "20-50"))) |>
+  group_by(year, size_class) |> 
+  summarise(mean_fr_spr = mean(fr_spr),
+            mean_fr_her = mean(fr_her),
+            mean_fr_sad = mean(fr_sad),
+            mean_fr_other = mean(fr_other),
+            mean_fr_other_invert = mean(fr_other_invert),
+            mean_fr_other_fish = mean(fr_other_fish),
+            mean_fr_benth_fish = mean(fr_benth_fish)) |>
+  ungroup() |>
+  pivot_longer(cols = starts_with(c("mean_fr")), names_to = "pgroup", values_to = "mean_fr") |>
+  ggplot(aes(year, mean_fr, color = size_class)) +
+  geom_line() +
+  facet_wrap(~pgroup, scales = "free_y") +
+  scale_x_continuous(breaks = seq(1963, 2023, by = 20))
+
+```
+I dont like the look of these plots, the fr cut off is very obvious. What are the consequences of removing those uncommon observations? If I incude to much of it, the fit becomes poor though...
+
+```{r}
+
+df_prs |>
+  dplyr::select(starts_with("fr")) |>
+  pivot_longer( cols = everything() ,values_to = "fr", names_to = "sp") |>
+  filter(fr > 0 & fr <= 1) |> 
+  ggplot(aes(fr)) +
+  geom_histogram(bins = 100) +
+  facet_wrap(~sp, scales = "free_y") +
+  labs(title = "continuous part")
+  
+df_prs |>
+  dplyr::select(starts_with("fr")) |>
+  pivot_longer( cols = everything() ,values_to = "fr", names_to = "sp") |>
+  mutate(presab = ifelse(fr == 0, 0, 1)) |>
+  group_by(sp) |>
+  summarise(perc_pres = sum(presab)/length(presab)*100)
+
+```
+
+# Saduria fr
+
+```{r fit saduria mods}
+
+# missing years
+my <- min(df_prs$year):max(df_prs$year)
+missing_years <- my[!my %in% unique(df_prs$year)]
+
+# mesh
+mesh_prs <- make_mesh(df_prs, c("X", "Y"), cutoff = 6)
+
+# reduce number of years to fit Tweedie model
+df_prs_sel <- df_prs |> filter( year %in% c(1993:2020))
+mesh_prs_sel <- make_mesh(df_prs_sel, c("X", "Y"), cutoff = 6)
+my_sel <- min(df_prs_sel$year):max(df_prs_sel$year)
+missing_years_sel <- my[!my %in% unique(df_prs_sel$year)]
+
+# Close other memory using processes before runnign the Tweedie with all years.
+gc()
+sadMod_n1 <- # same as tot, tweedie
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad ~ 0 + s(doy_sc, bs = "cc") + depth_sc,
+    time_varying = ~ 1 + pred_length_sc,
+    extra_time = missing_years_sel,
+    time = "year",
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = tweedie(link = "log")
+)
+
+sadMod_n2 <- # same as tot, delta_gamma poisson
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+    time_varying = ~ 1 + pred_length_sc,
+    extra_time = missing_years,
+    time = "year", 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+sadMod_n3 <- # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+sadMod_n4 <-  # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+#sanity(sadMod_n1)
+sanity(sadMod_n2)
+sanity(sadMod_n3)
+sanity(sadMod_n4)
+
+#AIC(sadMod_n1)
+AIC(sadMod_n2)
+AIC(sadMod_n3)
+AIC(sadMod_n4)
+
+r_mod <- bind_rows(tibble(res = residuals(sadMod_n1, model = 1), mod = "tweedie"),
+                  tibble(res = residuals(sadMod_n2, model = 1), mod = "2one"),
+                  tibble(res = residuals(sadMod_n2, model = 2), mod = "2two"),
+                  tibble(res = residuals(sadMod_n3, model = 1), mod = "3one"),
+                  tibble(res = residuals(sadMod_n3, model = 2), mod = "3two"),
+                  tibble(res = residuals(sadMod_n4, model = 1), mod = "4one"),
+                  tibble(res = residuals(sadMod_n4, model = 2), mod = "4two"))
+r_mod |>
+  filter(mod %in% c("2one","2two", "tweedie")) |>
+  ggplot( aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~mod, ncol = 2) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+
+r_mod |>
+  filter(mod %in% c("3one", "3two", "4one","4two")) |>
+  ggplot( aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~mod, ncol = 2) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+
+# model 3 MCMC
+res_sadMod_n3_1_200 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 201, model = 1, mcmc_warmup = 200))
+res_sadMod_n3_2_200 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 201, model = 2, mcmc_warmup = 200))
+
+res_sadMod_n3_1_2000 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 2001, model = 1, mcmc_warmup = 2000))
+res_sadMod_n3_2_2000 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 2001, model = 2, mcmc_warmup = 2000))
+#7
+# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
+# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
+# 
+# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
+# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
+
+r_modMCMC <- bind_rows(tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_200, model = 1), mod = "1_200"),
+                   tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_2_200, model = 2), mod = "2_200"),
+                   tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_2000, model = 1), mod = "1_2000"),
+                   tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_2_2000, model = 2), mod = "2_2000"))
+
+r_modMCMC |>
+  #filter(mod %in% c("3one", "3two", "4one","4two")) |>
+  ggplot( aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~mod, ncol = 2) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+
+# model 2 MCMC
+res_sadMod_n2_1_200 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 201, model = 1, mcmc_warmup = 200))
+res_sadMod_n2_2_200 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 201, model = 2, mcmc_warmup = 200))
+
+res_sadMod_n2_1_1000 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 2001, model = 1, mcmc_warmup = 2000))
+res_sadMod_n2_2_1000 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 2001, model = 2, mcmc_warmup = 2000))
+#7
+# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
+# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
+# 
+# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
+# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
+
+r_modMCMC2 <- bind_rows(tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_1_200, model = 1), mod = "1_200"),
+                   tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_2_200, model = 2), mod = "2_200"),
+                   tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_1_2000, model = 1), mod = "1_2000"),
+                   tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_2_2000, model = 2), mod = "2_2000"))
+
+r_modMCMC2 |>
+  #filter(mod %in% c("3one", "3two", "4one","4two")) |>
+  ggplot( aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~mod, ncol = 2) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+
+```
+
+The model with a formula same as fr_tot and tweedie is quite nice but will likely take a lot of time compared to a hurdle. Tweedie crashes R when fitting on the whole times series. This will be a problem with an spattemp model that takes more time and memory. A hurdle model with a formula same as fr_tot makes a poor fit due using time_varying. The continuous part of mod2 is nice but the pres/abs model is bent, using mcmcm residuals instead makes the continuous part bent. mod3 and 4 are similar but 3 has the lowest AIC and has the fixed effect of day of the year.  **I´ll go with 3**. But I´ll just show the lognormal models for completeness.   
+
+```{r hurdle lognormals}
+sadMod_n5 <- # delta logn year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_lognormal(type = "poisson-link")
+)
+
+sadMod_n6 <-  # delta logn year_f*pred_length_sc no doy
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_lognormal(type = "poisson-link")
+)
+
+sanity(sadMod_n5)
+sanity(sadMod_n6)
+
+AIC(sadMod_n5)
+AIC(sadMod_n6)
+
+r_df <- bind_rows(tibble(res = residuals(sadMod_n5, model = 1), mod = "5one"),
+                  tibble(res = residuals(sadMod_n5, model = 2), mod = "5two"),
+                  tibble(res = residuals(sadMod_n6, model = 1), mod = "6one"),
+                  tibble(res = residuals(sadMod_n6, model = 2), mod = "6two"))
+
+
+ggplot(r_df, aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~mod, ncol = 2) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+
+res_sadMod_n5 <- residuals(sadMod_n5, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n5, mcmc_iter = 201, mcmc_warmup = 200))
+
+qqnorm(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 1))
+qqline(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 1))
+
+qqnorm(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 2))
+qqline(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 2))
+```
+
+The lognormals qqs are not as nice as the gammas for the continouous part. *I´ll go with the hurdle gamma mod3 for saduria* and hope the same will work for the other prey species.  
+
+# Sprat fr
+
+```{r fit sprat model}
+
+sprMod_n2 <- # same as tot, delta_gamma poisson
+  sdmTMB(
+    data = df_prs,
+    formula = fr_spr ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+    time_varying = ~ 1 + pred_length_sc,
+    extra_time = missing_years,
+    time = "year", 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+sprMod_n3 <- # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_spr ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+sprMod_n4 <-  # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_spr ~ 0 + factor(year)*pred_length_sc + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+sanity(sprMod_n2)
+sanity(sprMod_n3)
+sanity(sprMod_n4)
+
+AIC(sprMod_n2)
+AIC(sprMod_n3) #lowest 
+AIC(sprMod_n4)
+
+r_df <- bind_rows(#tibble(res = residuals(sadMod_n1, model = 1), mod = "tweedie"),
+                    tibble(res = residuals(sprMod_n2, model = 1), mod = "2one"),
+                    tibble(res = residuals(sprMod_n2, model = 2), mod = "2two"),
+                    tibble(res = residuals(sprMod_n3, model = 1), mod = "3one"),
+                    tibble(res = residuals(sprMod_n3, model = 2), mod = "3two"),
+                    tibble(res = residuals(sprMod_n4, model = 1), mod = "4one"),
+                    tibble(res = residuals(sprMod_n4, model = 2), mod = "4two"))
+
+
+ggplot(r_df, aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~mod, ncol = 2) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+
+res_sprMod_n3 <- residuals(sprMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sprMod_n3, mcmc_iter = 201, mcmc_warmup = 200))
+
+qqnorm(residuals(sprMod_n3, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 1))
+qqline(residuals(sprMod_n3, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 1))
+
+qqnorm(residuals(sprMod_n3, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 2))
+qqline(residuals(sprMod_n3, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 2))
+```
+
+For sprat, model 4 has possibly a slightly better qqplots than 3. 3 has lower AIC by far and is the same formula as for the saduria model. Again, the mcmc residuals differ from the regular ones and the model seems way off. Using Tweedie makes R crash. I´ll stick to model 3 for sprat for now.
+
+
+# Herring fr
+
+```{r fit herring model}
+
+herMod_n2 <- # same as tot, delta_gamma poisson
+  sdmTMB(
+    data = df_prs,
+    formula = fr_her ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+    time_varying = ~ 1 + pred_length_sc,
+    extra_time = missing_years,
+    time = "year", 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+herMod_n3 <- # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_her ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+herMod_n4 <-  # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_her ~ 0 + factor(year)*pred_length_sc + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+sanity(herMod_n2)
+sanity(herMod_n3)
+sanity(herMod_n4)
+
+AIC(herMod_n2)
+AIC(herMod_n3) #lowest 
+AIC(herMod_n4)
+
+r_df <- bind_rows(#tibble(res = residuals(sadMod_n1, model = 1), mod = "tweedie"),
+                    tibble(res = residuals(herMod_n2, model = 1), mod = "2one"),
+                    tibble(res = residuals(herMod_n2, model = 2), mod = "2two"),
+                    tibble(res = residuals(herMod_n3, model = 1), mod = "3one"),
+                    tibble(res = residuals(herMod_n3, model = 2), mod = "3two"),
+                    tibble(res = residuals(herMod_n4, model = 1), mod = "4one"),
+                    tibble(res = residuals(herMod_n4, model = 2), mod = "4two"))
+
+ggplot(r_df, aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~mod, ncol = 2) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+
+```
+
+## Other invertebrates fr
+
+```{r fit other inv model}
+
+oinMod_n2 <- # same as tot, delta_gamma poisson
+  sdmTMB(
+    data = df_prs,
+    formula = fr_other_invert ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+    time_varying = ~ 1 + pred_length_sc,
+    extra_time = missing_years,
+    time = "year", 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+oinMod_n3 <- # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_other_invert ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+oinMod_n4 <-  # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_other_invert ~ 0 + factor(year)*pred_length_sc + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+sanity(oinMod_n2)
+sanity(oinMod_n3)
+sanity(oinMod_n4)
+
+AIC(oinMod_n2)
+AIC(oinMod_n3) #lowest 
+AIC(oinMod_n4)
+
+r_df <- bind_rows(#tibble(res = residuals(sadMod_n1, model = 1), mod = "tweedie"),
+                    tibble(res = residuals(oinMod_n2, model = 1), mod = "2one"),
+                    tibble(res = residuals(oinMod_n2, model = 2), mod = "2two"),
+                    tibble(res = residuals(oinMod_n3, model = 1), mod = "3one"),
+                    tibble(res = residuals(oinMod_n3, model = 2), mod = "3two"),
+                    tibble(res = residuals(oinMod_n4, model = 1), mod = "4one"),
+                    tibble(res = residuals(oinMod_n4, model = 2), mod = "4two"))
+
+ggplot(r_df, aes(sample = res)) +
+  stat_qq(shape = 1) +
+  stat_qq_line() +
+  facet_wrap(~mod, ncol = 2) +
+  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+
+```
+
+Delta lognormal seems overall most suitable for now. Lets wait with model fit for other invertebrates and the rest of the groups... 
