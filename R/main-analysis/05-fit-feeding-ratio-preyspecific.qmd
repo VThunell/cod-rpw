@@ -102,7 +102,7 @@ dfqs <- df |>
          between(fr_other_fish, 0, 1),
          between(fr_benth_fish, 0, 1),
          !is.na(day_of_year)) |>
-  select(starts_with("fr")) |>
+  dplyr::select(starts_with("fr")) |>
   map(\(sp) quantile(sp, c(0.95,0.98,0.99)))
 
 dfqs
@@ -112,7 +112,8 @@ df_prs <- df |>
   filter(fr_tot > 0,
          between(fr_spr, 0, signif(dfqs$fr_spr[3])),
          between(fr_her, 0, signif(dfqs$fr_her[3])),
-         between(fr_sad, 0, signif(dfqs$fr_sad[3])),
+         #between(fr_sad, 0, signif(dfqs$fr_tot[3])),
+         between(fr_sad, 0, 0.37),
          between(fr_other, 0, signif(dfqs$fr_other[3])),
          between(fr_other_invert, 0, signif(dfqs$fr_other_invert[3])),
          between(fr_other_fish, 0, signif(dfqs$fr_other_fish[3])),
@@ -181,7 +182,6 @@ missing_years <- my[!my %in% unique(df_prs$year)]
 # mesh
 mesh_prs <- make_mesh(df_prs, c("X", "Y"), cutoff = 6)
 
-gc()
 sadMod_n3_n <- # deltagamma year_f*pred_length_sc
   sdmTMB(
     data = df_prs,
@@ -192,20 +192,20 @@ sadMod_n3_n <- # deltagamma year_f*pred_length_sc
     family = delta_gamma(type = "poisson-link")
 )
 
-# sadMod_n3_nt <- # deltagamma year_f*pred_length_sc
-#   sdmTMB(
-#     data = df_prs,
-#     formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
-#     mesh = mesh_prs,
-#     spatial = "on",
-#     spatiotemporal = "off",
-#     family = tweedie(link = "log")
-# )
+sadMod_n3_nt <- # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
+    mesh = mesh_prs,
+    spatial = "on",
+    spatiotemporal = "off",
+    family = tweedie(link = "log")
+)
 
 sadMod_n3_s <- # spatial
   sdmTMB(
     data = df_prs,
-    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
+    formula = fr_sad ~ 0 + year_f*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
     mesh = mesh_prs,
     extra_time = missing_years,
     spatial = "on",
@@ -216,7 +216,7 @@ sadMod_n3_s <- # spatial
 sadMod_n3_st <- # sptiotemporal
   sdmTMB(
     data = df_prs,
-    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
+    formula = fr_sad ~ 0 + year_f*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
     mesh = mesh_prs,
     time = "year",
     extra_time = missing_years,

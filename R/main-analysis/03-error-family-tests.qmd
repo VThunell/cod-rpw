@@ -14,7 +14,7 @@ editor: source
 execute: 
   echo: true
   eval: true
-  cache: false
+  cache: true
 ---
 
 ## Load libraries
@@ -98,7 +98,7 @@ df_95 <- df_fr |>
 quantile(df_fr$fr_tot, 0.99) 
 # # remove feeding ratios above the 99th percentile 
 df_99 <- df_fr |>
-  filter(fr_tot <= 0.3)
+  filter(fr_tot <= 0.37)
 
 df_99 |>
   dplyr::select(fr_tot) |>
@@ -111,7 +111,7 @@ mesh <- make_mesh(df_95, c("X", "Y"), cutoff = 6)
 my <- min(df_95$year):max(df_95$year)
 missing_years <- my[!my %in% unique(df_95$year)]
 
-Mod_n_95 <- 
+gMod_n_95 <- 
   sdmTMB(
   data = df_95,
   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
@@ -130,7 +130,7 @@ mesh <- make_mesh(df_99, c("X", "Y"), cutoff = 6)
 my <- min(df_99$year):max(df_99$year)
 missing_years <- my[!my %in% unique(df_99$year)]
 
-Mod_n_99 <- 
+gMod_n_99 <- 
   sdmTMB(
   data = df_99,
   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
@@ -143,21 +143,21 @@ Mod_n_99 <-
   family = Gamma(link = "log")
 )
 
-sanity(Mod_n_95)
-sanity(Mod_n_99)
+sanity(gMod_n_95)
+sanity(gMod_n_99)
 
-AIC(Mod_n_95)
-AIC(Mod_n_99)
+AIC(gMod_n_95)
+AIC(gMod_n_99)
 
-res_Mod_n_95 <- mcmc_res <- residuals(Mod_n_95, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_95, mcmc_iter = 201, mcmc_warmup = 200))
-res_Mod_n_99 <- mcmc_res <- residuals(Mod_n_99, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_99, mcmc_iter = 201, mcmc_warmup = 200))
+res_gMod_n_95 <- mcmc_res <- residuals(gMod_n_95, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(gMod_n_95, mcmc_iter = 201, mcmc_warmup = 200))
+res_gMod_n_99 <- mcmc_res <- residuals(gMod_n_99, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(gMod_n_99, mcmc_iter = 201, mcmc_warmup = 200))
 
-r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95),  typer = "mcmc_95"),
-                  data_frame(res = residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99),  typer = "mcmc_99"),
-                  data_frame(res = residuals(Mod_n_95),  typer = "reg_95"),
-                  data_frame(res = residuals(Mod_n_99),  typer = "reg_99"))
+gr_df <- bind_rows(data_frame(res = residuals(gMod_n_95, "mle-mcmc", mcmc_samples = res_gMod_n_95),  typer = "mcmc_95"),
+                  data_frame(res = residuals(gMod_n_99, "mle-mcmc", mcmc_samples = res_gMod_n_99),  typer = "mcmc_99"),
+                  data_frame(res = residuals(gMod_n_95),  typer = "reg_95"),
+                  data_frame(res = residuals(gMod_n_99),  typer = "reg_99"))
 
-ggplot(r_df, aes(sample = res)) +
+ggplot(gr_df, aes(sample = res)) +
   stat_qq(shape = 1) +
   stat_qq_line() +
   facet_wrap(~typer) +
@@ -177,7 +177,7 @@ mesh <- make_mesh(df_95, c("X", "Y"), cutoff = 6)
 my <- min(df_95$year):max(df_95$year)
 missing_years <- my[!my %in% unique(df_95$year)]
 
-Mod_n_95 <- 
+lnMod_n_95 <- 
   sdmTMB(
   data = df_95,
   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
@@ -196,7 +196,7 @@ mesh <- make_mesh(df_99, c("X", "Y"), cutoff = 6)
 my <- min(df_99$year):max(df_99$year)
 missing_years <- my[!my %in% unique(df_99$year)]
 
-Mod_n_99 <- 
+lnMod_n_99 <- 
   sdmTMB(
   data = df_99,
   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
@@ -208,44 +208,66 @@ Mod_n_99 <-
   spatiotemporal = "off",
   family = lognormal(link = "log")
 )
-sanity(Mod_n_95)
-sanity(Mod_n_99)
+sanity(lnMod_n_95)
+sanity(lnMod_n_99)
 
-AIC(Mod_n_95)
-AIC(Mod_n_99)
+AIC(lnMod_n_95)
+AIC(lnMod_n_99)
 
-res_Mod_n_95 <- mcmc_res <- residuals(Mod_n_95, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_95, mcmc_iter = 201, mcmc_warmup = 200))
-res_Mod_n_99 <- mcmc_res <- residuals(Mod_n_99, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_99, mcmc_iter = 201, mcmc_warmup = 200))
+res_lnMod_n_95 <- mcmc_res <- residuals(lnMod_n_95, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(lnMod_n_95, mcmc_iter = 201, mcmc_warmup = 200))
+res_lnMod_n_99 <- mcmc_res <- residuals(lnMod_n_99, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(lnMod_n_99, mcmc_iter = 201, mcmc_warmup = 200))
 
-r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95),  typer = "mcmc_95"),
-                  data_frame(res = residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99),  typer = "mcmc_99"),
-                  data_frame(res = residuals(Mod_n_95),  typer = "reg_95"),
-                  data_frame(res = residuals(Mod_n_99),  typer = "reg_99"))
+lnr_df <- bind_rows(data_frame(res = residuals(lnMod_n_95, "mle-mcmc", mcmc_samples = res_lnMod_n_95),  typer = "mcmc_95"),
+                  data_frame(res = residuals(lnMod_n_99, "mle-mcmc", mcmc_samples = res_lnMod_n_99),  typer = "mcmc_99"),
+                  data_frame(res = residuals(lnMod_n_95),  typer = "reg_95"),
+                  data_frame(res = residuals(lnMod_n_99),  typer = "reg_99"))
 
 
-ggplot(r_df, aes(sample = res)) +
+ggplot(lnr_df, aes(sample = res)) +
   stat_qq(shape = 1) +
   stat_qq_line() +
   facet_wrap(~typer) +
   labs(y = "Sample Quantiles", x = "Theoretical Quantiles",  title = "Lognormal")
 
 ```
-The log normal makes for a way better fit and again, a higher cutoff seems better than a lower. I switch to log normal and use th 99th percentile (fr cutoff = 0.37).
 
-## Appendix. ggplot + stat_qq vs qqnorm()
+## What about generalized gamma?
 
-Does plotting approach affect visual interpretation... not really, but squeezing four facets on the same space as one qqnorm makes it a bit harder to see the patterns. 
+```{r gen gamma 99}
 
-```{r}
-r_df |>
-  filter(typer == "reg_95") |>
-  ggplot( aes(sample = res)) +
-  stat_qq(shape = 1) +
-  stat_qq_line() +
-  labs(y = "Sample Quantiles", x = "Theoretical Quantiles",  title = "Lognormal")
+mesh <- make_mesh(df_99, c("X", "Y"), cutoff = 6)
 
-qqnorm(residuals(Mod_n_95), main="regular 95")
-qqline(residuals(Mod_n_95))
+ggMod_n_99 <- 
+  sdmTMB(
+  data = df_99,
+  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+  time_varying = ~ 1 + pred_length_sc,
+  extra_time = missing_years,
+  time = "year", 
+  mesh = mesh,
+  spatial = "off",
+  spatiotemporal = "off",
+  #family = Gamma(link = "log")
+  family = gengamma(link = "log")
+)
+
+sanity(ggMod_n_99)
+
+AIC(gMod_n_99)
+AIC(lnMod_n_99)
+AIC(ggMod_n_99)
+
+gsim <- simulate(gMod_n_99, nsim = 1000, type = 'mle-mvn')
+lnsim <- simulate(lnMod_n_99, nsim = 1000, type = 'mle-mvn')
+ggsim <- simulate(ggMod_n_99, nsim = 1000, type = 'mle-mvn')
+# gamma
+dharma_residuals(gsim, gMod_n_99)
+# lognormal
+dharma_residuals(lnsim, lnMod_n_99)
+# generalised gamma
+dharma_residuals(ggsim, ggMod_n_99)
+
 ```
+The log normal makes for a way better fit and again, a higher cutoff seems better than a lower. I use log normal and the 99th percentile (fr cutoff = 0.37). gengamma() seems really good if we can compare the dharma residuals and it has lower AIC
 
 

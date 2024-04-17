@@ -54,20 +54,7 @@ Read data and depth-raster
 #| warning: false
 #| cache: false
 
-d <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
-  mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         herring_sc = (herring - mean(herring))/sd(herring),
-         saduria_sc = (saduria - mean(saduria))/sd(saduria),          
-         sprat_sc = (sprat - mean(sprat))/sd(sprat),
-         other_invert_sc = (other_invert - mean(other_invert))/sd(other_invert),
-         other_sc = (other - mean(other))/sd(other),
-         other_fish_sc = (other_fish - mean(other_fish))/sd(other_fish),
-         benth_fish_sc = (benth_fish - mean(benth_fish))/sd(benth_fish),
-         year_f = as.factor(year),
-         month_f = as.factor(month),
-         ices_rect = as.factor(ices_rect),
-         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length)
-) 
+d <- read_csv(paste0(home, "/data/clean/stomachs.csv"))
 
 glimpse(df)
 ```

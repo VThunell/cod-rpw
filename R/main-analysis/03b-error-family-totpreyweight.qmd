@@ -184,15 +184,15 @@ AIC(Mod_n_99)
 res_Mod_n_95 <- residuals(Mod_n_95, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_95, mcmc_iter = 201, mcmc_warmup = 200))
 res_Mod_n_99 <- residuals(Mod_n_99, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_99, mcmc_iter = 201, mcmc_warmup = 200))
 
-r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95),  typer = "mcmc_95"),
+gr_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95),  typer = "mcmc_95"),
                   data_frame(res = residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99),  typer = "mcmc_99"),
                   data_frame(res = residuals(Mod_n_95),  typer = "reg_95"),
                   data_frame(res = residuals(Mod_n_99),  typer = "reg_99"))
 
-# NOTE, 2.5 % infinite values 
+# NOTE, 2.3 % infinite values 
 length(which(is.infinite(r_df$res)))/length(r_df$res)
 
-ggplot(r_df, aes(sample = res)) +
+ggplot(gr_df, aes(sample = res)) +
   stat_qq(shape = 1) +
   stat_qq_line() +
   facet_wrap(~typer, ncol = 2) +
@@ -253,7 +253,7 @@ AIC(Mod_n_99)
 res_Mod_n_95 <- residuals(Mod_n_95, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_95, mcmc_iter = 201, mcmc_warmup = 200))
 res_Mod_n_99 <- residuals(Mod_n_99, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(Mod_n_99, mcmc_iter = 201, mcmc_warmup = 200))
 
-r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95),  typer = "mcmc_95"),
+lr_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples = res_Mod_n_95),  typer = "mcmc_95"),
                   data_frame(res = residuals(Mod_n_99, "mle-mcmc", mcmc_samples = res_Mod_n_99),  typer = "mcmc_99"),
                   data_frame(res = residuals(Mod_n_95),  typer = "reg_95"),
                   data_frame(res = residuals(Mod_n_99),  typer = "reg_99"))
@@ -261,13 +261,14 @@ r_df <- bind_rows(data_frame(res = residuals(Mod_n_95, "mle-mcmc", mcmc_samples 
 # NOTE, no % infinite values 
 length(which(is.infinite(r_df$res)))/length(r_df$res) * 100
 
-ggplot(r_df, aes(sample = res)) +
+ggplot(lr_df, aes(sample = res)) +
   stat_qq(shape = 1) +
   stat_qq_line() +
   facet_wrap(~typer, ncol = 2) +
   labs(y = "Sample Quantiles", x = "Theoretical Quantiles", title = "lognormal")
 
 ```
+
 
 ## Summary
 Gamma 95 percentile looking at regular residuals looks best. For lognormal its mcmc 99. Both gamma and lognormal "95" has higher AIC than "99". If we want to look at most of the data, lognormal is the way to go. Using the gamma distribution, there are lots of infinite residuals values. 
