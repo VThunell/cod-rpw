@@ -1,5 +1,5 @@
 ---
-title: "Prepare stomach content data for Lammska analysis"
+title: "Add environment to stomach content data"
 author: "Max Lindmark & Viktor Thunell"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 format: 
@@ -16,6 +16,7 @@ execute:
   eval: true
   cache: false
 ---
+
 
 ## Load libraries
 
@@ -43,19 +44,18 @@ home <- here::here()
 
 ## Read data
 
-I downloaded all stomach data from the Baltic, all countries (year 1963-2021), at 16:21  Jan 15 2024. This script prepares those, and two additional data sets, and combines them and prepares them for anlysis.
+I downloaded all stomach data from the Baltic, all countries (year 1963-2021), at 16:21  Jan 15 2024. This script prepares those, and two additional data sets, and combines them preparing them for anlyses.
 
-I want to analyse the individual level predator (cod) prey feeding ration, i.e weight total stomach content and specific prey types (e.g. saduria, herring and sprat) to cod. Hence we need, per cod stomach, the total prey weight and the sopecific weights of these species, and if they are absent, weight should be 0 . We also need coordinates for each cod. To get there, we need to do the following:
+I want to analyse the individual level predator (cod) prey feeding ratio, i.e weight total stomach content and specific prey types (e.g. saduria, herring and sprat) to cod. Hence we need, per cod stomach, the total prey weight and specific weights of important prey species and prey species groups, and if they are absent, weight should be 0. We also need coordinates for each cod. To get there, we need to do the following:
 
 1. Read in data
     a. downloaded data from ICES stomach database (new data base)
     b. complete new with old database (ODB) data (since large parts have still not been uploaded)
     c. add additional newer (SE) data and make data set with one row per prey item
 2. Some renaming and data cleaning
-3. Filter predators with the above prey present and calculate the total weight of these for each predator (one row per predator)
-4. Filter predators where these prey are not present. VT??
-5. Bind rows, and replace NA with 0 VTY??
-
+3. Filter out cod as predators
+5. CBind rows, and replace NA with 0 VTY??
+TODO UPDATE
 
 ```{r read data}
 # New database data
@@ -85,11 +85,10 @@ pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PredatorI
 prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PreyInformation.csv"))
 
 # Old database data (ODB)
-shimmy <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv")) 
+ODB <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv")) 
 
 # New SE data
-#SE <- read_csv(paste0(home, "/data/stomach/aggregated_stomach_data.csv")) 
-SE <- read_csv(paste0(home, "/data/stomach/full_stomach_data.csv"))
+SE <- read_csv(paste0(home, "/data/stomach/full_stomach_data_x.csv"))
 
 # BITS survey data to improve coordinates in ODB
 # bits_hh <- getDATRAS(record = "HH", survey = "BITS", years = 1963:2022, quarters = c(1,2,3,4))
@@ -97,6 +96,7 @@ SE <- read_csv(paste0(home, "/data/stomach/full_stomach_data.csv"))
 bits_hh <- read_csv(paste0(home, "/data/DATRAS_exchange/bits_hh.csv"))
 
 ```
+
 ## New database data (dowloaded Jan 15 2024)
 Start with new database data. The description of the data can be found here: <http://datsu.ices.dk/web/selRep.aspx?Dataset=157>
 
@@ -107,12 +107,11 @@ names(pred)
 names(prey)
 ```
 
-## Join all data files (new db)
-We do this in a specific order: fi -> hi -> pred -> prey.
+Join all data files (new db) in a specific order: fi -> hi -> pred -> prey.
 
 For some joins, there are multiple column names shared in addition to the key that I could remove and keep only the ID key and the non-shared columns but instead I keep them. First I need to ensure they are the same (VT what is the same and how do you do this?), and not only have the same name. Will also check if both datasets have the same amount of NA before choosing which column to carry from which dataset.
 
-```{r}
+```{r hi plus fi plus pred}
 hifi <- left_join(hi, fi, by = "tblUploadID") # join hail data with file info
 
 comcol_hifi_pred <- intersect(colnames(pred), colnames(hifi))
@@ -127,9 +126,9 @@ pred <- left_join(pred |> dplyr::select(-Notes), # join in predator data
                   by = comcol_hifi_pred[!comcol_hifi_pred == "Notes"])
 ```
 
-Now let's join predator data to prey data following the same procedure.
+Now join predator data to prey data following the same procedure.
 
-```{r}
+```{r joinin prey}
 intersect(colnames(pred), colnames(prey))
 
 # Length is a common column, but it corresponds to predator or prey. Rename!
@@ -152,8 +151,7 @@ pred <- pred |>
 
 # Regurgitated stomachs are only about 2% and come from 2021, 2018 and 2013 (and 1 in 1981). The NAs are from 2020 and 2021.
 pred |>
-  group_by(Year, Regurgitated_st) |>
-  summarize(count = n())
+  summarise(count = n(), .by = c(Year, Regurgitated_st))
 
 # There are regurgitated stomachs (column in pred) have information in prey info, i.e. either its incorrect or they have signs of regurgitation but prey in the stomach. These are various prey types from 2018 to 2021. Lets remove these for the fr analyses
 regurg_ids <- pred |>
@@ -167,23 +165,21 @@ prey <- prey |>
   filter(!tblPredatorInformationID %in% regurg_ids$tblPredatorInformationID)
 
 # Join in pred info into prey. There are rows only in pred (y) that are not in prey. These are either empty, regurgitated or incorrect. Empties will be added later.
-d <- left_join(prey, pred, by = c(comcol_prey_pred))
+new_db <- left_join(prey, pred, by = c(comcol_prey_pred))
 
 ```
 
-## Calculate total weight of specific prey species by unique predator ID
+Calculate total weight of specific prey species by unique predator ID. For NA and zero weights, we estimate weight if length is present. If length is not `NA` and Weight is 0 or NA, estimate weight based on length and Count. Else give weight `NA` and drop it. Because these are not true empty, else there wouldn't be species-information
 
-For NA and zero weights, we estimate weight if length is present. If length is not `NA` and Weight is 0 or NA, estimate weight based on length and Count. Else give weight `NA` and drop it. Because these are not true empty, else there wouldn't be species-information
-
-```{r}
+```{r weight new}
 # Estimate weight based on count. In the data, if count is >1, the weight is grouped.  In some cases, all of Weight, Count and prey_length is NA, i.e. there are presences of prey but no information for calculating the total weight or there is a length but no count (0) which we will treat as one and retrieve a weight, I think this is less wrong.
 
 # NA length unit matches the number of missing lengths. Where we don't have a unit is where length is lacking.
-sum(is.na(d$UnitLngt))/length(d$UnitLngt)
-sum(is.na(d$prey_length))/length(d$prey_length)
+sum(is.na(new_db$UnitLngt))/length(new_db$UnitLngt)
+sum(is.na(new_db$prey_length))/length(new_db$prey_length)
 
 # Calculate weight of prey given count and prey length
-d_c <- d |> 
+new_t <- new_db |> 
   mutate(prey_length = if_else(UnitLngt == "mm" & prey_length >= 0, prey_length/10, prey_length, missing = NA),
          Weight = replace_na(Weight, -9),
          Count = replace_na(Count, -9),
@@ -191,102 +187,107 @@ d_c <- d |>
          Count = if_else(prey_length > 0 & Count <= 0, 1, Count, missing = -9),# When prey_length exists but Count <= 0 we set them to 1.
          prey_weight_source = if_else(Weight <= 0 & prey_length > 0 & Count >= 0 , "estimated", "observed", missing = NA),
          Weight = if_else(prey_weight_source == "estimated", (0.01*prey_length^3)*Count, Weight, missing = -9),
-         ind_weight = if_else(Weight > 0 & Count > 0, Weight / Count, NA)) # Calcuate average prey weights
+         ind_weight = if_else(Weight > 0 & Count > 0, Weight / Count, NA)) # Calculate average prey weights
 
-d_c |> # some unreasonable lengths but not too much
+new_t |> # some unreasonable lengths but not too much
   ggplot(aes(Weight)) +
   geom_histogram() +
   facet_wrap(~AphiaIDPrey, scales = "free")
   
-d_c |> filter(Weight <= 0) |> dplyr::select(AphiaIDPrey, Weight, prey_length, Count)
-# Even if we estimate the prey weight based on the length of the prey and the number of the prey, we still have 173 rows that Weight == -9 or 0. Some of these are due to missing AphiaID, e.g. plastic and stone. We can give them the average weight. This may produce outliers when the predator is small compared to the avg prey size and but these would be removed in a later cleaning stage. Lets do this.
+new_t |> filter(Weight <= 0) |> dplyr::select(AphiaIDPrey, Weight, prey_length, Count)
+# Even if we estimate the prey weight based on the length of the prey and the number of the prey, we still have 173 rows that Weight == -9 or 0. Some of these are due to missing AphiaID, e.g. plastic and stone. We can give them the average weight. This may produce outliers when the predator is small compared to the avg prey size and but these would be removed in a later cleaning stage. Lets do it like that.
 
-d_c |>
+new_t |>
   filter(is.na(AphiaIDPrey))
 
-d_c |> # Of course there are extreme weights that should not be included
-  ggplot(aes(ind_weight)) +
-  facet_wrap(~AphiaIDPrey, ncol = 3, scales = "free") +
-  geom_histogram()
+# d_c |> # Of course there are extreme weights that should not be included
+#   ggplot(aes(ind_weight)) +
+#   facet_wrap(~AphiaIDPrey, ncol = 3, scales = "free") +
+#   geom_histogram()
 
-d_c |> # 893 g sprat? Doubt it! 
+new_t |> # 893 g sprat? Doubt it! 
   filter(AphiaIDPrey %in% c(293743, 1625944, 126425, 322683, 236448),
          ind_weight > 200) |> as.data.frame() 
 
-d_c |> # Saduria above 10 g, likely Count is wrong etc.
+new_t |> # Saduria above 10 g, likely Count is wrong etc.
   filter(AphiaIDPrey %in% c(293511, 119034),  
          ind_weight > 10) |> as.data.frame() 
-#VT: Many saduria is way off, mean weights of 1 g. max weight of 7,8 or 9? The count may be off etc. If the saduria analyses becomes important I need to revisit these values (https://doi.org/10.1111/j.0021-8790.2004.00800.x and https://www.jstor.org/stable/24831823 ). These outliers likely dissapear when I filter on feeding ratio. Can be calculated from Sharkweb data.
+#VT: Many saduria is way off, mean weights of 1 g. max weight of 7,8 or 9? The count may be off etc. If the saduria analyses becomes important I need to revisit these values (https://doi.org/10.1111/j.0021-8790.2004.00800.x and https://www.jstor.org/stable/24831823 ). These outliers likely disappear when I filter on feeding ratio (<1).
 
 # To control for outliers affecting average of individual weight, remove outliers outside quartiles
-prey_avg_ind_weight <- d_c |>
+prey_avg_ind_weight <- new_t |>
   filter(!is.na(AphiaIDPrey)) |>
   group_by(AphiaIDPrey) |> 
     filter(!ind_weight %in% boxplot.stats(ind_weight)$out) |>
-    reframe(avg_weight = mean(ind_weight, na.rm = TRUE))
+    reframe(avg_weight = mean(ind_weight, na.rm = TRUE)) |>
+  ungroup()
 
+prey_avg_ind_weight |> filter(is.na(avg_weight))
 # This should be the average prey weight which we can use to calculate the weight of these prey if we have the counts. Left join that summarized data and do the estimate of weight based on length. But first figure out which unit prey size is
 
 # Join average weight and estimate weight
-d_c <- d_c |> 
+new_t <- new_t |> 
   left_join(prey_avg_ind_weight) |> 
   mutate(Weight = if_else(Weight <= 0 & Count > 0 & !is.na(AphiaIDPrey), Count * avg_weight, Weight, missing = -9),
-         prey_weight = replace_na(Weight, 0))
+         prey_weight = replace_na(Weight, 0)) # New name and remove NaNs created when estimating avg weight excluding outliers (mean() creates NaNs).  
 
-# Max it this make more sense to have zeros could be rounding errors because they are present, whereas NAs could be because it simply wasn't weighed). 
-# Remove the negative weights (130 rows, <1%) and the NAs (6 rows, which are caused by NAs or lacking weight for an unusual prey)! Keep the ID's though because we also want to remove these from the full data set so that we don't inflate the total number of empty stomachs, because these are not actually empty. This removes 2 rows
-ids_to_remove <- d_c |> filter(Weight <= 0 | is.na(Weight))
-ids_to_remove |> as.data.frame() |> distinct(Weight, prey_length, Count)
+# Negative weights (127 rows, <1%) and the NAs (3 rows, which are caused by NAs or lacking weight for an unusual prey)!
+new_t |> filter(prey_weight <= 0) |> as.data.frame() |> distinct(prey_weight, prey_length, Count)
 
-d_c <- d_c |> 
-  filter(!(Weight <= 0 & Count <= 0 & prey_length <= 0),
-         !is.na(Weight))
+# Remove these 
+new_t <- new_t |> 
+  filter(!(prey_weight <= 0 & Count <= 0 & prey_length <= 0), # 127 rows
+         !is.na(prey_weight)) # three rows
 
 ```
+
 Next we need to summarize our prey weights by predator and prey group. 
 
 ```{r}
 
-length(which(is.na(d_c$AphiaIDPrey)))/length(d_c$AphiaIDPrey) # 4% NA, they will go into the other category
+length(which(is.na(new_t$AphiaIDPrey)))/length(new_t$AphiaIDPrey) # 4% NA, they will go into the other category
 
-agg_prey <- d_c |> # isopoda are likely often saduria but may also be other species. 
-  mutate(prey_class = NA,
-         prey_class = if_else(AphiaIDPrey %in% c(120113,130735,101744,101156,104152,101537,107552,110487, 101160,103079,103077,119822,120136,103251,102101,120120,141579,140480,120115,101361,144129,104165,883,103068,104878,1078,104517,104241,1066,51,1135,234024,326114,149668,882,106782,106674,105,1248,101063,107614,152302,140430, 107032,138999,138081,102292,107613), "other_invert", prey_class),
-         prey_class = if_else(AphiaIDPrey %in% c(293511, 119034), "saduria", prey_class), 
-         prey_class = if_else(AphiaIDPrey %in% c(126928,127196,126436,126450,125999,254529,127141,127123,126916, 127204,126996,127203,125537,152352), "benth_fish", prey_class),
-         prey_class = if_else(AphiaIDPrey %in% c(293743, 1625944, 126425, 322683, 236448), "sprat", prey_class),
-         prey_class = if_else(AphiaIDPrey %in% 126417, "herring", prey_class),
-         prey_class = if_else(AphiaIDPrey %in% c(125464, 125716), "unid_clupeids", prey_class),
-         prey_class = if_else(AphiaIDPrey %in% c(126752, 126505, 126736, 125516), "other_fish", prey_class),
-         prey_class = if_else(!prey_class %in% c("other_invert", "saduria", "benth_fish", "herring", "sprat", "other_fish", "unid_clupeids"), "other_or_NA", prey_class)) # NOTE "other_or_NA"
+new_pg <- new_t |> # isopoda are likely often saduria but may also be other species. 
+  mutate(prey_group = NA,
+         prey_group = if_else(AphiaIDPrey %in% c(120113,130735,101744,101156,104152,101537,107552,110487, 101160,103079,103077,119822,120136,103251,102101,120120,141579,140480,120115,101361,144129,104165,883,103068,104878,1078,104517,104241,1066,51,1135,234024,326114,149668,882,106782,106674,105,1248,101063,107614,152302,140430, 107032,138999,138081,102292,107613), "other_invert", prey_group),
+         prey_group = if_else(AphiaIDPrey %in% c(293511, 119034), "saduria", prey_group), 
+         prey_group = if_else(AphiaIDPrey %in% c(126928,127196,126436,126450,125999,254529,127141,127123,126916, 127204,126996,127203,125537,152352), "other_fish", prey_group),
+         prey_group = if_else(AphiaIDPrey %in% c(293743, 1625944, 126425, 322683, 236448), "sprat", prey_group),
+         prey_group = if_else(AphiaIDPrey %in% 126417, "herring", prey_group),
+         prey_group = if_else(AphiaIDPrey %in% c(125464, 125716), "unid_clupeids", prey_group),
+         prey_group = if_else(AphiaIDPrey %in% c(126752, 126505, 126736, 125516), "other_fish", prey_group),
+         prey_group = if_else(!prey_group %in% c("other_invert", "saduria", "other_fish", "herring", "sprat", "unid_clupeids"), "other", prey_group)) 
 
-# same number NA in agg_prey as in d!
+new_pg |> # only NA prey ids in the other group
+  filter(prey_group %in% "other") |>
+  dplyr::select(AphiaIDPrey) |>
+  summarise(count = n(), .by = c(AphiaIDPrey)) 
+
+# same number NA in d_pg as in d!
 # fixing "unid_clupeids" below 
-table(agg_prey$prey_class)
+table(new_pg$prey_group)
 
 # Negative numbers are likely because they couldn't be counted only weighed
 min(prey$Count, na.rm = TRUE)
-min(prey$Weight, na.rm = TRUE)
+min(prey$prey_weight, na.rm = TRUE)
 
-agg_prey |> filter(Weight == 0)
+new_pg |> filter(prey_weight == 0)
 ```
 
 With these estimates of weight based on either length or worst case, average weight of that prey, we calculate the total weight of these prey per individual predator stomach, and then pivot wider. 
 
 ```{r}
 
-agg_prey_summed <- agg_prey |> 
-  group_by(tblPredatorInformationID, prey_class) |> 
-  summarise(tot_weight = sum(Weight)) |> 
-  ungroup()
+new_pg_sum <- new_pg |> 
+  summarise(tot_weight = sum(Weight), .by = c(tblPredatorInformationID, prey_group))
 
-sum(is.na(agg_prey_summed$prey_class))
+sum(is.na(new_pg_sum$prey_group))
 
-agg_prey_summed <- agg_prey_summed |> 
-  pivot_wider(names_from = "prey_class", values_from = "tot_weight", values_fill = 0) 
+new_pg_sum <- new_pg_sum|> 
+  pivot_wider(names_from = "prey_group", values_from = "tot_weight", values_fill = 0) 
 
 # Split unidentified clupeids on sprat and herring  
-agg_prey_summed <- agg_prey_summed |> 
+new_pg_sum <- new_pg_sum |> 
   mutate(sprat = sprat + unid_clupeids*0.5,
          herring = herring + unid_clupeids*0.5) |> 
   dplyr::select(!unid_clupeids)
@@ -295,16 +296,17 @@ agg_prey_summed <- agg_prey_summed |>
 Next I will `left_join` in the remaining predator information, and after that `bind_rows` "empty stomachs" (with respect to these 3 prey species). Since the IDs are not overlapping, it doesn't matter that I already have some 0's here for some species
 
 ```{r}
-agg_prey_summed <- 
-  agg_prey_summed |> 
-  left_join(pred, by = "tblPredatorInformationID") |> 
-  drop_na(pred_length) 
+new_pg_pred <- 
+  new_pg_sum |> 
+  left_join(pred, by = "tblPredatorInformationID")
 
-t <- agg_prey_summed |>
-  dplyr::select("other_invert", "benth_fish", "other_fish", "sprat", "herring", "other_or_NA") |>
-  rowSums() == 0
-length(which(t)) # empty stomachs..
+# empty stomachs..
+new_pg_pred |>
+  rowwise() |>
+  filter( sum(c(other_invert, saduria, other_fish, sprat, herring, other)) == 0) 
+  
 ```
+
 Now add in the "empty stomachs" from pred using bind_rows. When I `bind_rows`, the columns that are not matching get `NA`. The only column not matching should be the average weight columns. They will get `NA`, and I'll change it to 0.
 
 ```{r}
@@ -314,57 +316,56 @@ Now add in the "empty stomachs" from pred using bind_rows. When I `bind_rows`, t
 # StomachEmpty = 1 is an empty stomach even though this is not an mandatory paramter (?). Since regurgitated==1 and NA have been removed, all empty stomachs seem to be truly empty, i.e. there are no tblpredatorinformationIDs with stomach empty that are in the prey data (No overlap in stomachs between the predator and prey data sets).
 empty_stom <- pred |> 
  filter(StomachEmpty == 1) |>
- filter(!tblPredatorInformationID %in% unique(agg_prey_summed$tblPredatorInformationID))
+ filter(!tblPredatorInformationID %in% unique(new_pg_sum$tblPredatorInformationID))
 
 # Bind rows!
-dd <- agg_prey_summed |> 
+new_data <- new_pg_pred |> 
   bind_rows(empty_stom)
 
 # Denmark report in kg
-ggplot(dd, aes(IndWgt)) + 
+ggplot(new_data, aes(IndWgt)) + 
   facet_wrap(~Country, scales = "free") + 
   geom_histogram()
 
-dd <- dd |> 
+new_data <- new_data |> 
   mutate(IndWgt = ifelse(Country %in% c("DK"), IndWgt*1000, IndWgt))
 
-dd |> # Note the one data point in 1989
+new_data |> # Note the one data point in 1989
   ggplot(aes(IndWgt)) + 
   facet_wrap(~Year, scales = "free") +
   geom_histogram()
 
 # Sweden report in mm
-dd |> # Note the one data point in 1989
+new_data |> # Note the one data point in 1989
   ggplot(aes(pred_length)) + 
   facet_wrap(~Country, scales = "free") +
   geom_histogram()
 
-dd <- dd |> 
+new_data <- new_data |> 
   mutate(pred_length = ifelse(Country %in% c("SE"), pred_length/10, pred_length))
 
 # Yes, works as intended, see the added NAs in the selected prey weights. Make them 0!
-dd <- dd |> 
-  mutate(other_or_NA = replace_na(other_or_NA, 0),
+new_data <- new_data |> 
+  mutate(other = replace_na(other, 0),
          sprat = replace_na(sprat, 0),
          herring = replace_na(herring, 0),
          saduria = replace_na(saduria, 0),
          other_invert = replace_na(other_invert, 0),
-         benth_fish = replace_na(benth_fish, 0),
          other_fish = replace_na(other_fish, 0))
 
 # Remove non cod predators (e.g. Whiting 126438)
-dd <- dd |> filter(AphiaIDPredator %in% c(126436))
+new_data <- new_data |> filter(AphiaIDPredator %in% c(126436))
 
-ggplot(dd, aes(pred_length, IndWgt)) + # 0, negative or NAs weight with lengths
+ggplot(new_data, aes(pred_length, IndWgt)) + # 0, negative or NAs weight with lengths
   geom_point()
 
 # Estimate predator weight if we have their length?
-dd <- dd |> 
+new_data <- new_data |> 
   mutate(IndWgt = replace_na(IndWgt, 0),
          pred_weight_source = ifelse(IndWgt <= 0, "estimated", "observed"),
          IndWgt = ifelse(pred_weight_source == "estimated", 0.01*pred_length^3, IndWgt))
 
-dd |> 
+new_data |> 
   arrange(desc(pred_weight_source)) |>
   ggplot(aes(pred_length, IndWgt, col = pred_weight_source)) +
   geom_point(shape = 4)
@@ -376,12 +377,13 @@ dd |>
 The data in the old ICES database contains much more data than what is found in the new version of the database but is in poor shape containing many errors and unique identiifers are missing. Below, identifiers for hauls and predators are made and the old db is cleaned.
 
 ```{r odb general}
-glimpse(shimmy)
+glimpse(ODB)
+
 # Each row in old data contains a prey item, i.e. we have many rows for each predator and there is no unique predator ID. We need to generate an identifier so that we can compare observations the old and new data. The ICESsampleID is for the predator I assume, ICESitemID are prey items but there are duplicates, possibly mainly due to the two data sets (Year of stomach and Stomach tender d using the same IDs which become duplicates?).  
 # By creating an ID with Date (Year, Month and Day), Country and Haul (HaulNo (new data) and Haul (old data)) we can identify the data missing from the new database. Ship info in the old data is unclean, by instead assuming that Country should be unique to date and haul (sort of Country as a proxy for Ship). However, there are 41506 rows where country and ship is missing. VT removes these. 
 #length(is.na(old_db[which(is.na(old_db$Country)),]$Ship))
 
-old_db <- janitor::remove_empty(shimmy, which = "cols") # remove cols with only Nas to increase readability
+old_db <- janitor::remove_empty(ODB, which = "cols") # remove cols with only Nas to increase readability
 
 # fix names
 old_db <- old_db |>
@@ -392,17 +394,17 @@ old_db <- old_db |>
                                                  if_else(Country == "Germany", "DE", "NotBaltic")))),
                            missing = "NotBaltic"))
 
-length(which(is.na(old_db$Country)))
-length(which(is.na(old_db$Haul)))
-length(which(is.na(old_db$ICES_StatRec)))
+sum(is.na(old_db$Country))
+sum(is.na(old_db$Haul))
+sum(is.na(old_db$ICES_StatRec))
 
-# we get rid of almost all NAs (198) in Haul by excluding based on lat lon (Country not needed then)
+# we get rid of almost all NAs (198 left) in Haul by excluding based on lat lon (Country not needed then)
 # filter and create identifier
-old_data <- old_db |> 
+old_db <- old_db |> 
   rename(HaulNo = Haul,
          ICESrectangle = ICES_StatRec) |> 
   filter(Predator_AphiaID %in% c(126436), # remove non cods
-         between(Latitude, 53, 65.5) & between(Longitude, 10, 24)) |> # remove data outside the Baltic
+         between(Latitude, 53, 60) & between(Longitude, 12.5, 24)) |> # remove data outside the Baltic
   mutate(Haul_ID = paste(Country, Year, Month, Day, HaulNo, ICESrectangle, sep = "_"))
 
 # join hi and fi from new db to get columns for identifier
@@ -412,12 +414,59 @@ prey_temp <- prey |>
   mutate(Haul_ID = paste(Country, Year, Month, Day, HaulNo, ICESrectangle, sep = "_"))
 
 # identify cod in hauls in the baltic not present in the new data. I.e. what the old db is adding to the new db
-missing_db <- old_data |>
+missing_db <- old_db |>
   anti_join(prey_temp, by = "Haul_ID") # return all rows from x (old_d) without a match in y (prey)
 ```
 
+Below we update ICES rectangle center based coordinates in the ODB with coordinates from matching BITS surveys.
 
-```{r odb prey pred lenghts ans weights}
+```{r join in coordinates from BITS}
+# # few data points have estimated the coordinates according to Estimated_Lat_Lon
+sum(old_db$Estimated_Lat_Lon == "Yes", na.rm = TRUE)/nrow(old_db) 
+
+missing_db |> # But its likely all ODB data as the lat lon of the rectangle midpoint equals the lat lon columns
+     filter(ices.rect(ICESrectangle)$lon == Longitude & ices.rect(ICESrectangle)$lat == Latitude) |>
+     count()
+
+length(unique(missing_db$Longitude)) # only 11 unique lats 
+missing_db |> # and 60 unique coords in the old db
+  dplyr::select(Latitude, Longitude) |> 
+  distinct()
+
+# Make an identifier
+intersect(tolower(colnames(missing_db)), tolower(colnames(bits_hh)))
+sum(is.na(missing_db$HaulNo)) # a few rows lacks haul number.
+
+missing_db <- missing_db |> 
+  mutate(Hid = paste(Country, Year, Month, Day, HaulNo, ICESrectangle, sep = "_")) #
+
+bits_hh <- bits_hh |> 
+  mutate(Hid = paste(Country, Year, Month, Day, HaulNo, StatRec, sep = "_"))
+
+length(intersect(missing_db$Hid, bits_hh$Hid) ) # 553 unique hauls that are matching based on Country, Year, Month, Day, ices_rect
+
+missing_db |> # We should have done better in the current millenium... 
+  filter(!Hid %in% unique(bits_hh$Hid)) |>
+  mutate(decade = round(Year/10) * 10) |>
+  group_by(decade, Country) |>
+  count() |>
+  ungroup()
+
+# Now I add lat/lon values from bits_hh to replace those in mm
+missing_db <- missing_db |> 
+  left_join(bits_hh |> dplyr::select(ShootLat, ShootLong, Hid)) |>
+  mutate(lat = ifelse(is.na(ShootLat), Latitude, ShootLat),
+         lon = ifelse(is.na(ShootLong), Longitude, ShootLong))
+
+# now there is 581 unique coordinates
+missing_db |>
+  dplyr::select(lat, lon) |> 
+  distinct()
+```
+
+Fox prey lengths and weights in the odb.
+
+```{r odb prey pred lenghts and weights}
 # fix predator lengths and weights. Esitmate weight when length exists
 missing_db2 <- missing_db |> 
   rename(pred_length = `Predator_Lengh(mean)`,
@@ -426,7 +475,7 @@ missing_db2 <- missing_db |>
          pred_weight = if_else(pred_weight_source == "estimated", (0.01*pred_length^3), pred_weight, missing = NA)) 
 
 missing_db2 |> # 819 prey weights out of 71 000 should be possible to fix
-  select(Prey_LowerLengthBound, Prey_UpperLengthBound, Prey_Weight, Prey_TotalNo) |>
+  dplyr::select(Prey_LowerLengthBound, Prey_UpperLengthBound, Prey_Weight, Prey_TotalNo) |>
   filter(is.na(Prey_Weight) | Prey_Weight == 0) |>
   filter((Prey_LowerLengthBound > 0 | Prey_UpperLengthBound > 0))
 
@@ -436,24 +485,25 @@ missing_db2 |>  # 70275 zeros out of which many are NA
   summarise(n()) 
 
 missing_db2 <- missing_db2 |> 
-  rename(count_prey = Prey_TotalNo,
+  rename(prey_count = Prey_TotalNo,
          prey_weight = Prey_Weight) |>
   mutate(Prey_UpperLengthBound = replace_na(Prey_UpperLengthBound, 0),
          Prey_LowerLengthBound = replace_na(Prey_LowerLengthBound, 0),
          prey_length = if_else(Prey_UpperLengthBound == 0, Prey_LowerLengthBound, 
-                               (Prey_UpperLengthBound + Prey_LowerLengthBound)/2, missing = NA),# there were few Upper (233)
-         count_prey = replace_na(count_prey, 0),
+                               (Prey_UpperLengthBound + Prey_LowerLengthBound)/2, 
+                               missing = NA),# there were few Upper (233)
+         prey_count = replace_na(prey_count, 0),
          prey_weight = replace_na(prey_weight, 0),
          prey_weight_source = if_else(prey_weight > 0, "observed",
-                                      if_else(count_prey > 0 & prey_length > 0, "estimated",
-                                              if_else(count_prey == 0 & prey_length > 0, "estimated_zerocount", 
+                                      if_else(prey_count > 0 & prey_length > 0, "estimated",
+                                              if_else(prey_count == 0 & prey_length > 0, "estimated_zerocount", 
                                                       NA, missing = NA), 
                                               missing = NA)),
          prey_weight = if_else(prey_weight_source == "estimated_zerocount", (0.01*prey_length^3)*1, 
-                               if_else(prey_weight_source == "estimated", (0.01*prey_length^3)*count_prey, 
+                               if_else(prey_weight_source == "estimated", (0.01*prey_length^3)*prey_count, 
                                        prey_weight, missing = 0), 
                                missing = 0), 
-         prey_weight_ind = if_else(count_prey > 0 & prey_weight > 0, prey_weight / count_prey, NA))
+         prey_weight_ind = if_else(prey_count > 0 & prey_weight > 0, prey_weight / prey_count, NA))
 
 table(missing_db2$prey_weight_source, useNA = "ifany")
 missing_db2 |>  # 70275 zeros out of which many come from NAs
@@ -461,24 +511,20 @@ missing_db2 |>  # 70275 zeros out of which many come from NAs
 
 # What to do with 70 000 missing weights. We can give them average weight like for the new db. 
 missing_db2 |> # where there is a prey species IDd, there are only 611 zero weights that we can fix. Here, I assume count Na/0 is zero. 
-  filter(!is.na(Prey_AphiaID) & prey_weight == 0 & count_prey >= 0)
-
-length(unique(prey_avg_ind_weight_odb$Prey_AphiaID))
+  filter(!is.na(Prey_AphiaID) & prey_weight == 0 & prey_count >= 0)
 
 # To control for outliers affecting average of individual weight, remove outliers outside quartiles
 prey_avg_ind_weight_odb <- missing_db2 |> #prey_avg_ind_weight_odb |>
   filter(!is.na(Prey_AphiaID)) |> 
-  group_by(Prey_AphiaID) |> 
-    filter(!prey_weight_ind %in% boxplot.stats(prey_weight_ind)$out) |>
-    reframe(avg_weight = mean(prey_weight_ind, na.rm = TRUE))
+  filter(!prey_weight_ind %in% boxplot.stats(prey_weight_ind)$out, .by = Prey_AphiaID) |>
+  reframe(avg_weight = mean(prey_weight_ind, na.rm = TRUE), .by = Prey_AphiaID)
 
 # Join average weight and estimate weight
 missing_db3 <- missing_db2 |> 
   left_join(prey_avg_ind_weight_odb) |> 
-  mutate(prey_weight = if_else(prey_weight <= 0 & count_prey > 0 & !is.na(Prey_AphiaID), count_prey * avg_weight, prey_weight))
+  mutate(prey_weight = if_else(prey_weight <= 0 & prey_count > 0 & !is.na(Prey_AphiaID), prey_count * avg_weight, prey_weight))
 
 missing_db3 |>  # 70275 zeros out of which many come from NAs
-  #filter(prey_weight == 0)
   filter(is.na(prey_weight))
 
 # remove zero weight predators and Id those with empty stomachs, make predator identifier. Rempove NA prey weights
@@ -488,30 +534,106 @@ missing_db3 <- missing_db3 |>
   mutate(pred_ID = paste(Haul_ID, `SampleNo(FishID)`, sep = "_"),
          empty_stom = ifelse(prey_weight <= 0 | is.na(prey_weight), 1, 0))
 
-
 ```
 
-
 ```{r prey classes}
+# fix NA prey latin name using Stomach_Item where possible before making prey classes
+missing_db3 |>
+  filter(is.na(Prey_LatinName)) |> 
+  summarise(fix = unique(Stomach_Item))
+
+# If Latin name is Na and pred weight or length is positive these (10 276) might be regurgs! 
+missing_db3 |>
+  filter(is.na(Prey_LatinName)) |> #those with NA
+  filter(prey_length > 0 | prey_weight > 0) |> # those wher
+  filter(is.na(Prey_AphiaID))
+
+# fix NA prey latin name using Stomach_Item where possible before making prey classes
+
+# where a latin name exists, replace those Na values a latin name
+missing_db4 <- missing_db3 |>
+  mutate(Prey_LatinName = if_else(!is.na(Prey_LatinName), Prey_LatinName, 
+                                  if_else(Stomach_Item == "Pontoporeia", "Pontoporeia",
+                                  if_else(Stomach_Item == "Insect", "Insecta",
+                                  if_else(Stomach_Item == "Gammarus sp.", "Gammaridae",
+                                  if_else(Stomach_Item %in% c("Sprat","sprat"), "Sprattus sprattus",
+                                  if_else(Stomach_Item %in% c("Zooplancton","Unidentified invertebrata","Unidentified worm"), "Invertebrate",         
+                                  if_else(Stomach_Item == "liocarcinus sp.", "Liocarcinus",         
+                                  if_else(Stomach_Item %in% c("Callianassidae", "Callianassidae "),  "Callianassidae",         
+                                  if_else(Stomach_Item == "Macoma sp.", "Macoma",         
+                                  if_else(Stomach_Item == "Terebellides stoemi", "Terebellides stroemi",
+                                  if_else(Stomach_Item == "Salmon stomach", "Salmonidae",         
+                                  if_else(Stomach_Item == "Processa sp.", "Processa",         
+                                  if_else(Stomach_Item == "Cerastoderma sp.", "Cerastoderma",         
+                                  if_else(Stomach_Item == "Trisopterus sp.", "Trisopterus",         
+                                  if_else(Stomach_Item == "Lycodes sp.", "Lycodes",         
+                                  if_else(Stomach_Item == "Callianassidae ", "Callianassidae",         
+                                  if_else(Stomach_Item == "Corophium sp.", "Corophium",         
+                                  if_else(Stomach_Item == "Hyas sp.", "Hyas",         
+                                  if_else(Stomach_Item == "Galathea sp.", "Galathea",
+                                  if_else(Stomach_Item == "Herring", "Clupea harengus",
+                                  if_else(Stomach_Item %in% c("Cod","Cod stomach", "Filet of Cod"), "Gadus morhua",
+                                  if_else(Stomach_Item == "Hydrobia sp.", "Hydrobidae",         
+                                  if_else(Stomach_Item == "Pandalus sp.", "Pandalidae",         
+                                  if_else(Stomach_Item %in% c("Pasiphaea sp.", "Pasiphaeidae "), "Pasiphaea",         
+                                  if_else(Stomach_Item == "Callionymus sp.", "Callionymus",         
+                                  if_else(Stomach_Item == "Pectinaria sp.", "Pectinaria",         
+                                  if_else(Stomach_Item == "Pagurus sp.", "Paguruidea",         
+                                  if_else(Stomach_Item == "Halicryptus spimulosus", "Halicryptus spinulosus",         
+                                  if_else(Stomach_Item == "Palaemon sp.", "Palaemon",
+                                  if_else(Stomach_Item == "Hediste divericolor", "Hediste diversicolor",
+                                  if_else(Stomach_Item == "Fifteen-spined stickleback", "Spinachia spinachia",         
+                                  if_else(Stomach_Item == "Annelidae", "Annelida",         
+                                  if_else(Stomach_Item == "Nereididae ", "Nereididae",         
+                                  if_else(Stomach_Item == "Cerastoderma glaucum", "Cerastoderma glaucum",         
+                                  if_else(Stomach_Item %in% c("Pasiphaeidae", "Pasiphaeidae "), "Pasiphaeidae",
+                                  if_else(Stomach_Item == "Broad-nosed pipefish", "Syngnathus typhle",         
+                                  if_else(Stomach_Item == "Whiting", "Merlangius merlangus",         
+                                  if_else(Stomach_Item == "Nine-spined stickleback", "Pungitius pungitius",         
+                                  if_else(Stomach_Item == "Liocarcinus sp.", "Liocarcinus",         
+                                  if_else(Stomach_Item == "Stickleback", "Gasterosteus aculeatus",         
+                                  if_else(Stomach_Item == "Flounder", "Platichthys flesus",   
+                                  if_else(Stomach_Item == "Round goby", "Neogobius melanostomus",   
+                                  if_else(Stomach_Item == "Four-bearded rockling", "Enchelyopus cimbrius",         
+                                  if_else(Stomach_Item == "Clupeidae scales", "Clupeidae",         
+                                  if_else(Stomach_Item == "Horse mackerel", "Scombridea",
+                                  if_else(Stomach_Item == "Unidentified fish", "Pisces",         
+                                  if_else(Stomach_Item %in%  c("Petromyzontidae","Petromyzontidae "), "Petromyzontidae", NA))))))))))))))))))))))))))))))))))))))))))))))))
+
+# Fixed but some NA latin names where Stomach_Item has a name ending with a space (" ") still show up in the summary:
+missing_db4 |>
+  filter(is.na(Prey_LatinName)) |>
+  summarise(fix = unique(Stomach_Item))
+
+# If Latin name is Na and pred weight or length is positive these (10 276) might be regurgs! 
+missing_db4 |>
+  filter(is.na(Prey_LatinName)) |> #those with NA
+#  filter(prey_length > 0 | prey_weight > 0) |> # those wher
+  filter(!is.na(Prey_AphiaID))
+
 
 # Make prey classes
-missing_db4 <- missing_db3 |>
-  mutate(prey_class = NA, 
-         prey_class = if_else( Prey_LatinName %in% c("Mysis mixta", "Bylgides sarsi", "Crangon crangon", "Pontoporeia affinis", "Pontoporeia femorata", "Gammarus", "Mysidae",  "Halicryptus spinulosus", "Neomysis integer", "Hyperia galba",  "Gastropoda",  "Priapulida", "Priapulidae", "Priapulus caudatus", "Caprellidae",  "Gammaridae", "Hyperiidae", "Corophium volutator", "Bathyporeia pilosa", "Monoporeia affinis", "Macoma balthica", "Diastylis rathkei", "Bivalvia", "Crustacea", "Brachyura", "Caridea", "Paguridae", "Leucosiidae", "Hippolytidae", "Crangonidae", "Pandalidae", "Pasiphaeidae", "Processidae", "Galathea intermedia", "Nephrops norvegicus",  "Liocarcinus depurator", "Palaemon elegans", "Pandalus montagui", "Pasiphaea multidentata", "Pasiphaea sivado", "Ostracoda", "Copepoda", "Meganyctiphanes norvegica", "Decapoda", "Isopoda", "Amphipoda", "Cumacea", "Idotea balthica", "Gastrosaccus spinifer", "Mysis oculata", "Mysis relicta", "Praunus flexuosus", "Praunus inermis", "Ophiuridae", "Bylgides",  "Aphrodita aculeata",  "Scoloplos armiger", "Insecta", "Mytilus edulis", "Synchaeta", "Scyphozoa", "Aurelia aurita", "Hydrobia", "Loligo vulgaris", "Mya arenaria", "Hediste diversicolor", "Cardium edule", "Terebellides stroemi", "Nereididae",  "Pestarella tyrrhena", "Mollusca", "Polybiidae", "Annelida", "Polychaeta", "Amphibalanus improvisus"), "other_invert", prey_class),
-         prey_class = if_else( Prey_LatinName %in% c("Saduria entomon"), "saduria", prey_class),
-         prey_class = if_else( Prey_LatinName %in% c("Enchelyopus cimbrius", "Gadus morhua", "Zoarces viviparus", "Pomatoschistus minutus", "Platichthys flesus", "Pomatoschistus", "Myxine glutinosa", "Lampetra fluviatilis", "Pleuronectiformes", "Ammodytes tobianus", "Pisces",  "Gadidae", "Ammodytidae", "Callionymidae", "Gobiidae", "Stichaeidae", "Zoarcidae", "Pleuronectidae", "Cottidae", "Melanogrammus aeglefinus", "Merlangius merlangus", "Pollachius virens", "Spinachia spinachia", "Hyperoplus lanceolatus", "Aphia minuta", "Neogobius melanostomus", "Pomatoschistus microps", "Pholis gunnellus", "Trachinus draco", "Hippoglossoides platessoides", "Limanda limanda", "Pleuronectes platessa", "Cottus gobio", "Myoxocephalus scorpius", "Taurulus bubalis", "Cyclopterus lumpus", "Maurolicus muelleri", "Sander lucioperca", "Rutilus rutilus",  "Lumpenus lampretaeformis", "Myoxocephalus quadricornis", "Vimba vimba"), "benth_fish", prey_class),
-         prey_class = if_else( Prey_LatinName %in% c("Sprattus sprattus"), "sprat", prey_class),
-         prey_class = if_else( Prey_LatinName %in% c("Clupea harengus"), "herring", prey_class),
-         prey_class = if_else( Prey_LatinName %in% c("Clupea", "Clupeidae"), "unid_clupeids", prey_class),
-         prey_class = if_else( Prey_LatinName %in% c("Gasterosteus aculeatus", "Osmerus eperlanus", "Belone belone", "Engraulis encrasicolus"), "other_fish", prey_class),
-         prey_class = if_else(!prey_class %in% c("other_invert", "saduria", "benth_fish", "herring", "unid_clupeids", "sprat", "other_fish"), "other_or_NA", prey_class, missing = NA)) # NOTE, "clupea" and"clupeidea" etc. are "other"
+missing_db4 <- missing_db4 |>
+  mutate(prey_group = NA, 
+         prey_group = if_else( Prey_LatinName %in% c("Mysis mixta", "Bylgides sarsi", "Crangon crangon", "Pontoporeia affinis", "Pontoporeia femorata", "Pontoporeia", "Gammarus", "Mysidae",  "Halicryptus spinulosus", "Neomysis integer", "Hyperia galba",  "Gastropoda", "Palaemon", "Priapulida", "Priapulidae", "Priapulus caudatus", "Caprellidae", "Cerastoderma", "Callianassidae", "Gammaridae", "Hyperiidae", "Corophium volutator", "Corophium", "Bathyporeia pilosa", "Monoporeia affinis", "Macoma balthica", "Macoma", "Diastylis rathkei", "Bivalvia", "Crustacea", "Brachyura", "Caridea", "Paguridae", "Leucosiidae", "Hippolytidae", "Crangonidae", "Pandalidae", "Pasiphaeidae", "Processidae", "Galathea intermedia", "Galathea", "Nephrops norvegicus", "Liocarcinus", "Liocarcinus depurator", "Palaemon elegans", "Hyas","Pandalus montagui", "Pasiphaea multidentata", "Pasiphaea sivado", "Ostracoda", "Copepoda", "Meganyctiphanes norvegica", "Decapoda", "Isopoda", "Amphipoda", "Cumacea", "Idotea balthica", "Gastrosaccus spinifer", "Mysis oculata", "Mysis relicta", "Praunus flexuosus", "Praunus inermis", "Ophiuridae", "Bylgides", "Paguruidea","Processa", "Pasiphaea","Pectinaria", "Aphrodita aculeata", "Scoloplos armiger", "Insecta", "Mytilus edulis", "Synchaeta", "Scyphozoa", "Hediste diversicolor", "Aurelia aurita", "Hydrobia", "Loligo vulgaris", "Mya arenaria", "Hediste diversicolor", "Cardium edule", "Terebellides stroemi", "Nereididae",  "Pestarella tyrrhena", "Mollusca", "Polybiidae", "Hydrobidae","Annelida", "Polychaeta", "Amphibalanus improvisus", "Cerastoderma glaucum", "Invertebrate"), "other_invert", prey_group),
+         prey_group = if_else( Prey_LatinName %in% c("Saduria entomon"), "saduria", prey_group),
+         prey_group = if_else( Prey_LatinName %in% c("Enchelyopus cimbrius", "Gadus morhua", "Zoarces viviparus", "Pomatoschistus minutus", "Platichthys flesus", "Pomatoschistus", "Myxine glutinosa", "Lampetra fluviatilis", "Pleuronectiformes", "Ammodytes tobianus", "Pisces",  "Gadidae", "Ammodytidae", "Callionymidae", "Gobiidae", "Stichaeidae", "Zoarcidae", "Pleuronectidae", "Cottidae", "Melanogrammus aeglefinus", "Merlangius merlangus", "Pollachius virens", "Spinachia spinachia", "Hyperoplus lanceolatus", "Aphia minuta", "Neogobius melanostomus", "Lycodes", "Pomatoschistus microps", "Pholis gunnellus", "Trachinus draco", "Hippoglossoides platessoides", "Limanda limanda", "Pleuronectes platessa", "Cottus gobio", "Myoxocephalus scorpius", "Taurulus bubalis", "Cyclopterus lumpus", "Maurolicus muelleri", "Sander lucioperca", "Rutilus rutilus", "Callionymus","Lumpenus lampretaeformis", "Myoxocephalus quadricornis", "Vimba vimba", "Trisopterus", "Gasterosteus aculeatus", "Osmerus eperlanus", "Belone belone", "Scombridea", "Salmonidae", "Pungitius pungitius", "Engraulis encrasicolus", "Petromyzontidae", "Syngnathus typhle"), "other_fish", prey_group),
+         prey_group = if_else( Prey_LatinName %in% c("Sprattus sprattus"), "sprat", prey_group),
+         prey_group = if_else( Prey_LatinName %in% c("Clupea harengus"), "herring", prey_group),
+         prey_group = if_else( Prey_LatinName %in% c("Clupea", "Clupeidae"), "unid_clupeids", prey_group),
+         prey_group = if_else(!prey_group %in% c("other_invert", "saduria", "herring", "unid_clupeids", "sprat", "other_fish"), "other", prey_group, missing = NA))
+
+missing_db4 |>
+  filter(prey_group == "other") |>
+  dplyr::select(Prey_LatinName, Stomach_Item) |>
+  summarise(count = n(), .by = c(Prey_LatinName, Stomach_Item)) 
 
 # Duplicates?
 dup <- missing_db4 |>
   group_by(Haul_ID) |> 
   dplyr::select(-Dataset, -ICES_SampleID) |> #ID, `Predator_Weight(mean)`) |> 
   duplicated() |> 
-  which()
+  which() 
 
 # remove duplicates
 missing_db4 <- missing_db4[-dup,]
@@ -519,136 +641,86 @@ missing_db4 <- missing_db4[-dup,]
 # in the old db,, we have both pred and prey data. This means we need to summarize and then add in pred info from the whole db df. To keep the columns we need we use mutate instead of summarise(). 
 length(unique(missing_db4$pred_ID)) 
 
-missing_db4_summed <- missing_db4 |> 
-  #filter(empty_stom == 0) |> 
-  group_by(pred_ID, prey_class) |> 
-  summarise(tot_weight = sum(prey_weight)) |> 
-  #mutate(tot_weight = sum(prey_weight)) |>
-  ungroup()
+missing_db4_sum <- missing_db4 |> 
+  summarise(tot_weight = sum(prey_weight), .by = c(pred_ID, prey_group))
 
-missing_db4_summed <- missing_db4_summed |> 
-  pivot_wider( names_from = "prey_class", values_from = "tot_weight", values_fill = 0) # `values_fill = 0` make 0 not NA
+missing_db4_sum <- missing_db4_sum |> 
+  pivot_wider( names_from = "prey_group", values_from = "tot_weight", values_fill = 0) # `values_fill = 0` make 0 not NA
 
 # Split unidentified clupeids on sprat and herring  
-missing_db4_summed <- missing_db4_summed |> 
+missing_db4_sum <- missing_db4_sum |> 
   mutate(sprat = sprat + unid_clupeids*0.5,
          herring = herring + unid_clupeids*0.5) |> 
   dplyr::select(!unid_clupeids)
-
-# colnames(missing_db3) selecting columns without prey info in the join.
-mm <- missing_db4_summed |> 
-   left_join( dplyr::select(missing_db3, Dataset, Country, Ship, Latitude, Longitude, Estimated_Lat_Lon, ICESrectangle, Year, Month, Day, Time, Station, HaulNo, Depth, 'SampleNo(FishID)', Predator_AphiaID, Predator_LatinName, pred_weight, pred_length, prey_weight, Haul_ID, pred_weight_source, prey_weight_source, pred_ID, empty_stom), by = "pred_ID", multiple = "first")
-
-mm |> # there are unlikeley extremes. These are filtered on feeding ratio in the analysis.   
-  rowwise() |>
-  mutate(total = sum(other_or_NA, other_invert, saduria, benth_fish, herring, sprat, other_fish)) |>
-  filter( total > 1000) |>
-  arrange(desc(total))
-
-mm |> count(empty_stom) # 36 % empty stomachs
-
-mm |> 
-  arrange(desc(pred_weight_source)) |>
-  ggplot(aes(pred_length, pred_weight, col = pred_weight_source)) +
-  geom_point(shape = 4)
 ```
 
 
-```{r join in coordinates from BITS}
-# # one third of the data has estimated the coordinates  according to Estimated_Lat_Lon
-sum(old_db$Estimated_Lat_Lon == "Yes", na.rm = TRUE)/nrow(old_db) 
+```{r prey classes}
+# colnames(missing_db3) selecting columns without prey info in the join.
+old_data <- missing_db4_sum |> 
+   left_join( dplyr::select(missing_db3, Dataset, Country, Ship, Latitude, Longitude, Estimated_Lat_Lon, ICESrectangle, Year, Month, Day, Time, Station, HaulNo, Depth, 'SampleNo(FishID)', Predator_AphiaID, Predator_LatinName, pred_weight, pred_length, prey_weight, Haul_ID, pred_weight_source, prey_weight_source, pred_ID, empty_stom), by = "pred_ID", multiple = "first")
 
-mm |> # But its likely all old db data since the center of the ices rectangle equals the lat lon data
-     # mutate(Latitude = round(Latitude, 2),
-     #        Latitude = round(Latitude, 2)) |> 
-     filter(ices.rect(ICESrectangle)$lon == Longitude & ices.rect(ICESrectangle)$lat == Latitude) |>
-     count()
+old_data |> # there are unlikely extremes. These are filtered on feeding ratio in the analysis.
+  rowwise() |>
+  mutate(total = sum(other, other_invert, saduria, herring, sprat, other_fish)) |>
+  filter( total > 1000) |>
+  arrange(desc(total)) |>
+  ungroup()
 
-length(unique(mm$Longitude)) # only 12 unique lats 
-mm |> # and 70 unique coords in the old db
-  select(Latitude, Longitude) |> 
-  distinct()
+old_data |> count(empty_stom) # 36 % empty stomachs
 
-# Make an identifier
-intersect(tolower(colnames(mm)), tolower(colnames(bits_hh)))
-length(which(is.na(mm$HaulNo))) # a few rows lacks haul number.
-
-mm <- mm |> 
-  mutate(Hid = paste(Country, Year, Month, Day, HaulNo, ICESrectangle, sep = "_")) #
-
-bits_hh <- bits_hh |> 
-  mutate(Hid = paste(Country, Year, Month, Day, HaulNo, StatRec, sep = "_"))
-
-length(intersect(mm$Hid, bits_hh$Hid) ) # 553 unique hauls that are matching based on Country, Year, Month, Day, ices_rect
-
-mm |> # We should have done better in the current millenium... 
-  filter(!Hid %in% unique(bits_hh$Hid)) |>
-  mutate(decade = round(Year/10) * 10) |>
-  group_by(decade, Country) |>
-  count()
-
-# Now I add lat/lon values from bits_hh to replace those in mm
-mm <- mm |> 
-  left_join(bits_hh |> dplyr::select(ShootLat, ShootLong, Hid)) |>
-  mutate(lat = ifelse(is.na(ShootLat), Latitude, ShootLat),
-         lon = ifelse(is.na(ShootLong), Longitude, ShootLong))
-
-# now there is 591 unique coordinates
-mm |>
-  select(lat, lon) |> 
-  distinct()
+old_data |> 
+  arrange(desc(pred_weight_source)) |>
+  ggplot(aes(pred_length, pred_weight, col = pred_weight_source)) +
+  geom_point(shape = 4)
 ```
 
 ## New SE data
 
 ```{r}
 # Calculate total weight of prey by predator ID and prey species (i.e., across prey sizes). First create wide data frame so that I can sum easily across prey groups (columns)
-SE_wide <- SE %>% 
-  group_by(pred_id, prey_latin_name) %>% 
-  summarise(tot_prey_weight_g = sum(prey_weight_g)) %>% 
-  ungroup() %>% 
+SE_wide <- SE |>
+  summarise(tot_prey_weight_g = sum(prey_weight_g), .by = c(pred_id, prey_latin_name)) %>% 
   pivot_wider(names_from = prey_latin_name, values_from = tot_prey_weight_g) %>% 
-  mutate_all(~ifelse(is.na(.), 0, .)) %>% 
-  clean_names()
+  mutate_all(~ifelse(is.na(.), 0, .)) |>
+  clean_names() 
+
+#noquote(sort(names(SE_wide)[-1]))
 
 # Now make some calculations and aggregate to some taxonomic level. Since all columns are assigned to some higher level group (or the same group), the sum of these is the total stomach content. Note that I have one group for unidentified clupeids, but also sprat and herring. So if I want the total of some aggregated group, then I need to add all the sub-groups.
-
 SE_wide2 <- SE_wide %>% 
-  mutate(other_invert = gammarus_sp + monoporeia_affinis + amphipoda + hyperia_galba + bivalvia + mytilus_sp + mytilus_sp_2 + mya_arenaria + macoma_balthica + mytilus_edulis + limecola_balthica + limecola_balthica_2 + mysidae + neomysis_integer + mysis_mixta + mysida + gastrosacus + pontoporeia_femorata + pontoporeia_femotara + crangon + crangon_crangon + idotea_balthica + cumacea + idotea_sp + praunus_flexuosus + crustacea + diastylis_rathkei + palaemon_sp + palaemon_elegans + caridea + copepoda + pontoporeiidae + decapoda + pontoporeidae + halicryptus_spinulosus + halicryptus_spinulosus_2 + priapulus + priapulus_caudatus + priapulus_caudatus_2 + hydrobia_sp + priapulida + halicryptus + halicryptus_spinolusus + priapulida_2 + prapulida + bylgides_sarsi + scoloplos_armiger + hediste_diversicolor + phyllodocida + polychaeta + pectinaria_sp + nephtys_ciliata,
+  mutate(other_invert = gammarus + gammarus_sp + monoporeia_affinis + amphipoda + hyperia_galba + bivalvia + mytilus_sp + mytilus_sp_2 + mya_arenaria + macoma_balthica + mytilus_edulis + limecola_balthica + limecola_balthica_2 + mysidae + neomysis_integer + mysis_mixta + mysida + gastrosacus + pontoporeia_femorata + pontoporeia_femotara + crangon + crangon_crangon + idotea_balthica + cumacea + idotea_sp + praunus_flexuosus + crustacea + diastylis_rathkei + palaemon_sp + palaemon_elegans + caridea + copepoda + pontoporeiidae + decapoda + pontoporeidae + halicryptus_spinulosus + halicryptus_spinulosus_2 + priapulus + priapulus_caudatus + priapulus_caudatus_2 + hydrobia_sp + priapulida + halicryptus + halicryptus_spinolusus + priapulida_2 + prapulida + bylgides_sarsi + scoloplos_armiger + hediste_diversicolor + phyllodocida + polychaeta + pectinaria_sp + nephtys_ciliata + palaemon,
          unid_clupeids = clupeidae + clupeidae_2,
          herring = clupea_harengus + clupea_harengus_2,
          saduria = saduria_entomon,
          sprat = sprattus_sprattus + sprattus_sprattus_2,
-         benth_fish = gadus_morhua + gobiidae + gobiidae_2 + gobius_niger + neogobius_melanostomus + aphia_minuta + platichthys_flesus + enchelyopus_cimbrius + zoarces_viviparus + pleuronectidae + agonus_cataphractus + myoxocephalus_scorpius,
-         other_or_NA = stone + stone_2 + plastic + plastics + sand + wood + carbon + carbon_2 + wood_2 + litter_plastics + sand_2 + algae + aglae + waste + remains + remains_2 + digestive_tract + mucus + mucus_2 + na,
-         other_fish = pisces + pisces_2 +  + engraulis_encrasicolus + gasterosteus_aculeatus + scales + scales_2 + scomber_scombrus + pungitius_pungitius + ammodytidae + gasterosteidae)
+         other_fish = gadus_morhua + gobiidae + gobiidae_2 + gobius_niger + neogobius_melanostomus + aphia_minuta + platichthys_flesus + enchelyopus_cimbrius + zoarces_viviparus + pleuronectidae + agonus_cataphractus + myoxocephalus_scorpius + pisces + pisces_2 + pisces_osteichthyes + engraulis_encrasicolus + gasterosteus_aculeatus + scales + scales_2 + scomber_scombrus + pungitius_pungitius + ammodytidae + gasterosteidae, 
+         other = stone + stone_2 + plastic + plastics + sand + wood + carbon + carbon_2 + wood_2 + litter_plastics + sand_2 + algae + aglae + waste + remains + remains_2 + digestive_tract + mucus + mucus_2 + na)
 
 SE_wide2 <- SE_wide2 |> # split clupeids into equal parts sprat and herring
   mutate(sprat = sprat + unid_clupeids*0.5,
          herring = herring + unid_clupeids*0.5) |> 
-  dplyr::select(!unid_clupeids)
+  dplyr::select(-unid_clupeids)
 
 # Check it's correct! The sum of all groups should be the sum of all categories
-t <- SE_wide2 |>
+SE_wide2 |>
   rowwise() |> 
-  mutate(all_cat_sum = sum(c_across(2:102)),
-         group_sum = sum(c_across(103:109))) |>
-  dplyr::select(all_cat_sum, group_sum) |>
-  filter(!all_cat_sum == group_sum)  
-which(!(t[1]- t[2]) < 10^-13) # only differences due to rounding.
+  mutate(diff = sum(c_across(2:105)) - sum(c_across(106:111))) |>
+  summarise(max_diffs = sort(diff) ) # minimal differences only 
 
 # Select only aggregated columns 
 SE_wide3 <- SE_wide2 %>%
-  dplyr::select(pred_id, other_invert, herring, saduria, sprat, benth_fish, other_or_NA, other_fish)
+  dplyr::select(pred_id, other_invert, herring, saduria, sprat, other, other_fish)
 
 # Add back in other information about the predator ID and add and rename some columns
-ll <- SE |>
-  dplyr::select(predator_latin_name, species, pred_weight_g, pred_length_cm,
-                year, quarter, month, ices_rect, subdiv, haul_id, smhi_serial_no,
+
+SE_wide4 <- SE |>
+  dplyr::select(predator_latin_name, species, pred_weight_g, pred_length_cm, predator_code, year, quarter, month, ices_rect, subdiv, haul_id, smhi_serial_no,
                 X, Y, lat, lon, pred_id, fle_kg_km2, mcod_kg_km2, scod_kg_km2, date,
                 bottom_depth) |>
   distinct(pred_id, .keep_all = TRUE) |>
-  filter(predator_latin_name %in% "Gadus morhua") |>
+  #filter(predator_latin_name %in% "Gadus morhua") |>
+  filter(predator_code %in% "COD") |>
   left_join(SE_wide3) |>
   rename(pred_weight = pred_weight_g,
          pred_length = pred_length_cm,
@@ -663,7 +735,7 @@ ll <- SE |>
 ```{r merge dbs}
 
 # rename ids and add a column to separate new from old database
-new_db_data <- dd |> 
+new_db_data <- new_data |> 
   rename(lat = ShootLat,
          lon = ShootLong,
          pred_weight = IndWgt) |>
@@ -671,81 +743,83 @@ new_db_data <- dd |>
          pred_ID = as.character(tblPredatorInformationID),
          data_source = "new_db")
 
-old_db_data <- mm |> 
+old_db_data <- old_data |> 
+  rename(lat = Latitude,
+         lon = Longitude) |>
   mutate(data_source = "old_db",
          Day = as.double(Day),
          Month = as.double(Month))
 
-new_SE_data <- ll |>
+new_SE_data <- SE_wide4 |>
   rename(pred_ID = pred_id,
          Year = year,
-         Depth = bottom_depth,
-         ICESrectangle = ices_rect) |>
-  dplyr::select(-c(X, Y)) |>
-  mutate(data_source = "new_SE",
+         Depth = bottom_depth) |>
+  dplyr::select(-c(X, Y, ices_rect)) |>
+  mutate(ICESrectangle = ices.rect2(lon, lat),
+         data_source = "new_SE",
          Day = day(date),
          Month = month)
 
-comcol_newold_pred <- intersect( intersect(colnames(new_db_data), colnames(old_db_data)),
+comcol_all_data_pred <- intersect( intersect(colnames(new_db_data), colnames(old_db_data)),
                                  colnames(new_SE_data))
 
 bind_rows( new_db_data |> dplyr::select(Year, pred_ID, data_source), 
            old_db_data |> dplyr::select(Year, pred_ID, data_source),
            new_SE_data |> dplyr::select(Year, pred_ID, data_source) ) |>
-  group_by(Year, data_source) |>
-  summarise(count = n()) |>
+  summarise(count = n(), .by = c(Year, data_source)) |>
   ggplot() +
   geom_bar(aes(Year, count, fill = data_source), alpha = 1, stat="identity", position = "stack") +
   scale_x_continuous(n.breaks = 10) +
   ylab("# stomachs")
 
 # Check if any of the two datasets have NA in the common columns. 
-unique(is.na(old_db_data |> dplyr::select(all_of(comcol_newold_pred)))) # depth and time are all NAs and HaulNO we dont need. Day and month we may need however and these stomachs need to be removed in case month is a predictor
-unique(is.na(new_db_data |> dplyr::select(all_of(comcol_newold_pred))))
-unique(is.na(new_SE_data |> dplyr::select(all_of(comcol_newold_pred))))
+unique(is.na(old_db_data |> dplyr::select(all_of(comcol_all_data_pred)))) # Depth is all NAs but we dont need it. Day we may need however and these stomachs need to be removed in case day is a predictor. COnsider also when adding in environmental data. 
+unique(is.na(new_db_data |> dplyr::select(all_of(comcol_all_data_pred))))
+unique(is.na(new_SE_data |> dplyr::select(all_of(comcol_all_data_pred))))
 
 str(old_db_data)
 str(new_db_data)
 # remove Time, Depth, HaulNo and Ship (ship makes w-o columns .x and .y)
-newold <- full_join( old_db_data |> dplyr::select(-c(Time, Depth, HaulNo, Ship)), # join in predator data
+all_data <- full_join( old_db_data |> dplyr::select(-c(Time, Depth, HaulNo, Ship)), # join in predator data
                      new_db_data |> dplyr::select(-c(Time, Depth, HaulNo, Ship)),
-                     by = comcol_newold_pred[!comcol_newold_pred %in% c("Time","Depth","HaulNo", "Ship")])  |>
-  full_join(new_SE_data, by = comcol_newold_pred[!comcol_newold_pred %in% c("Time","Depth","HaulNo", "Ship")] )
+                     by = comcol_all_data_pred[!comcol_all_data_pred %in% c("Time","Depth","HaulNo", "Ship")])  |>
+  full_join(new_SE_data, by = comcol_all_data_pred[!comcol_all_data_pred %in% c("Time","Depth","HaulNo", "Ship")] )
 
 ```
 
 Now calculate feeding ratios of cod. 
 
 ```{r}
-# Calculate feeding ratios
-newold2 <- newold |> 
+# Calculate feeding ratios and remove values above 1
+all_data2 <- all_data |> 
   rowwise() |> 
   mutate(fr_sad = saduria / pred_weight,
          fr_spr = sprat / pred_weight,
          fr_her = herring / pred_weight,
-         fr_other_or_NA = other_or_NA / pred_weight,
+         fr_other = other / pred_weight,
          fr_other_invert = other_invert / pred_weight,
          fr_other_fish = other_fish / pred_weight,
-         fr_benth_fish = benth_fish / pred_weight,
-         fr_tot = sum(other_or_NA, other_invert, benth_fish, other_fish, saduria, sprat, herring) / pred_weight)
+         fr_tot = sum(other, other_invert, other_fish, saduria, sprat, herring) / pred_weight) |>
+  filter(between(fr_tot, 0, 1 )) |>
+  ungroup()
 
-newold2 |>  # log so we can see the data better
-  dplyr::select(fr_sad, fr_spr, fr_her, fr_tot, fr_other_or_NA, fr_other_invert, fr_benth_fish) |> 
+all_data2 |>  # log so we can see the data better
+  dplyr::select(fr_sad, fr_spr, fr_her, fr_tot, fr_other, fr_other_invert) |> 
+  #dplyr::select(fr_tot) |> 
   pivot_longer(everything()) |> 
-  filter(between(value, 0, 0.5 )) |>
   ggplot(aes(log(value))) +
   geom_histogram(bins = 100) +
   facet_wrap(~name, ncol = 2, scales = "free")
+
 ```
 
 Check the proportion of stomachs without these prey
 
 ```{r}
-newold2 |> 
-  pivot_longer(c("herring", "saduria", "sprat","other_or_NA", "other_invert", "other_fish","benth_fish")) |> 
-  group_by(name) |> 
+all_data2 |> 
+  pivot_longer(c("herring", "saduria", "sprat","other", "other_invert", "other_fish")) |> 
   summarise(prop_empty = sum(value == 0)/n(), 
-            prop_not_empty = sum(value != 0)/n())
+            prop_not_empty = sum(value != 0)/n(), .by = name)
 ```
 
 Seems like fairly high proportions of cod without these key species in stomachs, but at least ~half have other prey in their stomachs
@@ -753,21 +827,20 @@ Seems like fairly high proportions of cod without these key species in stomachs,
 ```{r}
 #| out-width: 100%
 
-# add day of the year
-newold2 <- newold2 |> 
-    mutate(day_of_year = ifelse( !is.na(sum(Year, Month, Day)),
-                                  yday(as.Date(paste(Year, Month, Day, sep = "-"))),
-                                  NA))
+# add day of the year. When Day is missing (622 rows), this will be NA. 
+all_data2 <- all_data2 |> 
+  mutate(day_of_year = yday(as.Date(paste(Year, Month, Day, sep = "-"))))
 
-# Fix some columns
-df <- newold2 |> 
+
+# Fix some columns and select
+df <- all_data2 |> 
   dplyr::select(!month) |> #remove errornous month
   rename(ices_rect = ICESrectangle,
          year = Year,
          month = Month,
          day = Day) |> 
   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
-  dplyr::select(pred_ID, herring, saduria, sprat, other_or_NA, other_invert, other_fish, benth_fish, fr_tot, fr_sad, fr_spr, fr_her, fr_other_or_NA, fr_other_invert, fr_benth_fish, fr_other_fish, year, month, day, day_of_year, pred_weight, pred_length, pred_weight_source, saduria, sprat, herring, lat, lon, ices_rect, X, Y, data_source, Country)#, depth)
+  dplyr::select(pred_ID, herring, saduria, sprat, other, other_invert, other_fish, fr_tot, fr_sad, fr_spr, fr_her, fr_other, fr_other_invert, fr_other_fish, year, month, day, day_of_year, pred_weight, pred_length, pred_weight_source, saduria, sprat, herring, lat, lon, ices_rect, X, Y, data_source, Country)#, depth)
 
 # Add sample size per coordinate for plotting
 df_plot <- df |>
@@ -780,10 +853,7 @@ df_plot <- df |>
 
 plot_map_fc +
   geom_point(data = df_plot, aes(X*1000, Y*1000, size = sample_size), alpha = 0.5) +
-  #facet_wrap(~ year, ncol = 6) +
   facet_wrap(~ decade, ncol = 4) +
-  #facet_wrap(Country ~ data_source , ncol = 6) +
-  #theme_sleek(base_size = 6) + 
   theme(legend.position = "bottom",
         axis.text.x = element_text(angle = 90)) +
   scale_size(range = c(.01, 2), name = "# stomachs") +
@@ -792,54 +862,10 @@ plot_map_fc +
 ggsave(paste0(home, "/figures/supp/year_diet_map.pdf"), width = 15, height = 15, units = "cm")
 ```
 
-Add depth
-
-```{r}
-dep_raster <- terra::rast(paste0(home, "/data/Mean depth natural colour (with land).nc"))
-class(dep_raster)
-crs(dep_raster, proj = TRUE)
-
-plot(dep_raster)
-
-df$depth <- terra::extract(dep_raster, df |> dplyr::select(lon, lat))$elevation
-
-ggplot(df, aes(lon, lat, color = depth*-1)) + 
-  geom_point()
-
-df$depth <- df$depth*-1
-
-# TODO: these coordinates are waaay off
-# This remoes 8349 rows
-df <- df |> drop_na(depth) 
-
-df |> 
-  ggplot(aes(X*1000, Y*1000, color = depth)) + 
-  geom_point() +
-  NULL
-
-hist(df$depth)
-
-#remove points outside the baltic, i.e. the western most points in:
-df |>
-  ggplot(aes(lon, lat, color = depth)) + 
-  geom_point() + 
-  geom_vline(xintercept = 13) +
-  coord_sf()
-
-df <- df |>
-  filter( lon > 13)
-
-plot_map_fc +
-  geom_point(data = df, aes(X*1000, Y*1000, color = depth), alpha = 0.5) +
-  theme_sleek(base_size = 6) + 
-  geom_sf()
-
-```
 
 ```{r}
 # Save data
-write_csv(df, paste0(home, "/data/clean/stomachs.csv"))
-
+write_csv(df, paste0(home, "/data/clean/stomachs3.csv"))
 ```
 
 ```{r}
@@ -847,3 +873,18 @@ write_csv(df, paste0(home, "/data/clean/stomachs.csv"))
 #| eval: false
 #renderthis::to_pdf(paste0(here::here(), "/R/prepare-data/01-test-prepare-stomach-data.html"))
 ```
+
+```{r ID species}
+  
+# library(worrms)
+# getAID <- function(nam)  {
+#     as.data.frame(wm_records_taxamatch(name = nam)[[1]][c(1,3)])
+# }
+# 
+# AID_nam <-
+# unique(missing_db3$Prey_LatinName) |>
+# map(\(x) getAID(x)) |>
+# list_rbind()
+
+```
+
