@@ -1,6 +1,6 @@
 ---
-title: "Add environment to stomach content data"
-author: "Max Lindmark & Viktor Thunell"
+title: "Prepare stomach content data"
+author: "Viktor Thunell & Max Lindmark"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 format: 
   html:
