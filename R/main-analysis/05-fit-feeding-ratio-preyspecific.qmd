@@ -1,6 +1,6 @@
 ---
-title: "Prey specific feeding ratio fit"
-author: "Viktor Thunell (& Max)"
+title: "Prey specific feeding ratio fit sdmTMB model"
+author: "Viktor Thunell & Max Lindmark)"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 format: 
   html:
@@ -41,15 +41,14 @@ invisible(lapply(pkgs, library, character.only = T))
 # Source code for map plots
 # You need:
 # devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+library(ggsidekick)
 devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
 options(ggplot2.continuous.colour = "viridis")
 #remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
 # install.packages("remotes")
 #remotes::install_github("pbs-assess/sdmTMB", dependencies = TRUE)
 
-library(ggsidekick)
 theme_set(theme_sleek())
-
 set.seed(123)
 # Set path
 home <- here::here()
@@ -62,15 +61,8 @@ home <- here::here()
 #| warning: false
 #| cache: false
 
-df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
+df <- read_csv(paste0(home, "/data/clean/stomachs2.csv")) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         herring_sc = (herring - mean(herring))/sd(herring),
-         saduria_sc = (saduria - mean(saduria))/sd(saduria),          
-         sprat_sc = (sprat - mean(sprat))/sd(sprat),
-         other_invert_sc = (other_invert - mean(other_invert))/sd(other_invert),
-         other_sc = (other - mean(other))/sd(other),
-         other_fish_sc = (other_fish - mean(other_fish))/sd(other_fish),
-         benth_fish_sc = (benth_fish - mean(benth_fish))/sd(benth_fish),
          year_f = as.factor(year),
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
@@ -88,8 +80,7 @@ plot_map +
 
 ```
 
-
-## Filter
+## Filter on feeding ratios 
 
 ```{r}
 dfqs <- df |>
@@ -97,7 +88,7 @@ dfqs <- df |>
          between(fr_spr, 0, 1),
          between(fr_her, 0, 1),
          between(fr_sad, 0, 1),
-         between(fr_other, 0, 1),
+         between(fr_other_or_NA, 0, 1),
          between(fr_other_invert, 0, 1),
          between(fr_other_fish, 0, 1),
          between(fr_benth_fish, 0, 1),
@@ -114,7 +105,7 @@ df_prs <- df |>
          between(fr_her, 0, signif(dfqs$fr_her[3])),
          #between(fr_sad, 0, signif(dfqs$fr_tot[3])),
          between(fr_sad, 0, 0.37),
-         between(fr_other, 0, signif(dfqs$fr_other[3])),
+         between(fr_other_or_NA, 0, signif(dfqs$fr_other_or_NA[3])),
          between(fr_other_invert, 0, signif(dfqs$fr_other_invert[3])),
          between(fr_other_fish, 0, signif(dfqs$fr_other_fish[3])),
          between(fr_benth_fish, 0, signif(dfqs$fr_benth_fish[3])),
@@ -131,7 +122,7 @@ df_prs |>
   summarise(mean_fr_spr = mean(fr_spr),
             mean_fr_her = mean(fr_her),
             mean_fr_sad = mean(fr_sad),
-            mean_fr_other = mean(fr_other),
+            mean_fr_other_or_NA = mean(fr_other_or_NA),
             mean_fr_other_invert = mean(fr_other_invert),
             mean_fr_other_fish = mean(fr_other_fish),
             mean_fr_benth_fish = mean(fr_benth_fish)) |>
@@ -182,17 +173,7 @@ missing_years <- my[!my %in% unique(df_prs$year)]
 # mesh
 mesh_prs <- make_mesh(df_prs, c("X", "Y"), cutoff = 6)
 
-sadMod_n3_n <- # deltagamma year_f*pred_length_sc
-  sdmTMB(
-    data = df_prs,
-    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
-    mesh = mesh_prs,
-    spatial = "off",
-    spatiotemporal = "off",
-    family = delta_gamma(type = "poisson-link")
-)
-
-sadMod_n3_nt <- # deltagamma year_f*pred_length_sc
+sad_Mod_n3_ntw <- # deltagamma year_f*pred_length_sc
   sdmTMB(
     data = df_prs,
     formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
@@ -202,7 +183,17 @@ sadMod_n3_nt <- # deltagamma year_f*pred_length_sc
     family = tweedie(link = "log")
 )
 
-sadMod_n3_s <- # spatial
+sad_Mod_n3_n <- # deltagamma year_f*pred_length_sc
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
+    mesh = mesh_prs,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(type = "poisson-link")
+)
+
+sad_Mod_n3_s <- # spatial
   sdmTMB(
     data = df_prs,
     formula = fr_sad ~ 0 + year_f*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
@@ -213,7 +204,7 @@ sadMod_n3_s <- # spatial
     family = delta_gamma(type = "poisson-link")
 )
 
-sadMod_n3_st <- # sptiotemporal
+sad_Mod_n3_st <- # spatiotemporal
   sdmTMB(
     data = df_prs,
     formula = fr_sad ~ 0 + year_f*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
@@ -225,21 +216,24 @@ sadMod_n3_st <- # sptiotemporal
     family = delta_gamma(type = "poisson-link")
 )
 
-sanity(sadMod_n3_n)
-sanity(sadMod_n3_s)
-sanity(sadMod_n3_st)
+sanity(sad_Mod_n3_ntw)
+sanity(sad_Mod_n3_n)
+sanity(sad_Mod_n3_s)
+sanity(sad_Mod_n3_st)
 
-AIC(sadMod_n3_n)
-AIC(sadMod_n3_s)
-AIC(sadMod_n3_st)
+AIC(sad_Mod_n3_ntw)
+AIC(sad_Mod_n3_n)
+AIC(sad_Mod_n3_s)
+AIC(sad_Mod_n3_st)
 # res_sadMod <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 201, mcmc_warmup = 200))
 
-r_df <- bind_rows(tibble(res = residuals(sadMod_n3_n, model = 1), mod = "n hurdle one"),
-                  tibble(res = residuals(sadMod_n3_n, model = 2), mod = "n hurdle two"),
-                  tibble(res = residuals(sadMod_n3_s, model = 1), mod = "s hurdle one"),
-                  tibble(res = residuals(sadMod_n3_s, model = 2), mod = "s hurdle two"),
-                  tibble(res = residuals(sadMod_n3_st, model = 1), mod = "st hurdle one"),
-                  tibble(res = residuals(sadMod_n3_st, model = 2), mod = "st hurdle two"))
+r_df <- bind_rows(tibble(res = residuals(sad_Mod_n3_ntw, model = 1), mod = "n tweedie"),
+                  tibble(res = residuals(sad_Mod_n3_n, model = 1), mod = "n hurdle one"),
+                  tibble(res = residuals(sad_Mod_n3_n, model = 2), mod = "n hurdle two"),
+                  tibble(res = residuals(sad_Mod_n3_s, model = 1), mod = "s hurdle one"),
+                  tibble(res = residuals(sad_Mod_n3_s, model = 2), mod = "s hurdle two"),
+                  tibble(res = residuals(sad_Mod_n3_st, model = 1), mod = "st hurdle one"),
+                  tibble(res = residuals(sad_Mod_n3_st, model = 2), mod = "st hurdle two"))
 
 ggplot(r_df, aes(sample = res)) +
   stat_qq(shape = 1) +

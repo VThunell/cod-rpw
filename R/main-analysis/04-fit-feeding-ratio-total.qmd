@@ -40,10 +40,10 @@ invisible(lapply(pkgs, library, character.only = T))
 # Import some plotting functions
 # Source code for map plots
 # You need:
-# devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+#devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
 devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
 options(ggplot2.continuous.colour = "viridis")
-remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
+#remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
 # install.packages("remotes")
 #remotes::install_github("pbs-assess/sdmTMB", dependencies = TRUE)
 
@@ -61,26 +61,23 @@ home <- here::here()
 #| warning: false
 #| cache: false
 
-df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
+df <- read_csv(paste0(home, "/data/clean/stom_env.csv")) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         herring_sc = (herring - mean(herring))/sd(herring),
-         saduria_sc = (saduria - mean(saduria))/sd(saduria),          
-         sprat_sc = (sprat - mean(sprat))/sd(sprat),
-         other_invert_sc = (other_invert - mean(other_invert))/sd(other_invert),
-         other_sc = (other - mean(other))/sd(other),
-         other_fish_sc = (other_fish - mean(other_fish))/sd(other_fish),
-         benth_fish_sc = (benth_fish - mean(benth_fish))/sd(benth_fish),
          year_f = as.factor(year),
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
          pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
-         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)
+         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |> 
+  rowwise() |> 
+  mutate(tot = sum(other, other_invert, other_fish, saduria, sprat, herring)
 )
 
 glimpse(df)
 
 pred_grid <- bind_rows(readRDS(paste0(home, "/data/clean/pred_grid_(1_2).rds")),
                        readRDS(paste0(home, "/data/clean/pred_grid_(2_2).rds")))
+# pred_grid <- bind_rows(read_csv(paste0(home, "/data/clean/pred_grid_(1_2)_max.csv")),
+#                         read_csv(paste0(home, "/data/clean/pred_grid_(2_2)_max.csv")))
 
 plot_map +
   geom_raster(data = pred_grid, aes(X*1000, Y*1000, fill = depth))
@@ -92,12 +89,15 @@ plot_map +
 
 ```{r}
 
-# remove empty stomachs and day of year that are NA
-df_tot <- df |>
- filter( fr_tot > 0 & fr_tot <= 0.37) |>
- filter( !is.na(day_of_year) ) |>
- mutate(decade = round(year/10) * 10)
+# remove empty stomachs and day of year that are NA.  0.37 is 99th percentile
+q99 <- quantile(df$fr_tot, .99)
+df_tot <- df |> 
+  filter( fr_tot > 0 & fr_tot < q99,
+         !is.na(day_of_year)) |> # should tehse get the mean day_of_year instead?
+ mutate(fr_tot_sqrt = sqrt(fr_tot),
+        decade = round(year/10) * 10)
 
+hist(df_tot$pred_length)
 ```
 
 ## We suspect that the amount of food in relation to cod weight in stomachs is decreasing and depends on predator length:
@@ -113,7 +113,6 @@ df_tot |>
   scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
 
 df_tot |> 
-  #filter(year %in% seq(1970,2020, by = 10)) |>
   ggplot(aes(pred_length, fr_tot, color = year))  +
   geom_point() +
   stat_smooth(method = "gam", formula = y ~ s(x, k=3))
@@ -130,13 +129,11 @@ df_tot |>
 ## Fit spatiotemporal, spatial and not spatial models 
 
 ```{r fit Mods}
-# fitting without spatial and spatiotemporal effects takes 15 sec, spatial model 20. AR1 spatiotemporal model 4 hours.
-
 # mesh
 mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
  
 # reduce number of years to reduce fitting time
-# df_tot_sel <- df_tot |> filter( year %in% c(2012:2022))
+#df_tot_sel <- df_tot |> filter( year %in% c(2012:2022))
 # mesh_tot_sel <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
 
 # missing years
@@ -146,28 +143,30 @@ missing_years <- my[!my %in% unique(df_tot$year)]
 Mod_n <- 
   sdmTMB(
   data = df_tot,
-  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+  formula = fr_tot_sqrt ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
   time_varying = ~ 1 + pred_length_sc,
   extra_time = missing_years,
-  time = "year", 
   mesh = mesh_tot,
   spatial = "off",
   spatiotemporal = "off",
-  family = gengamma(link = "log"),
+  family = Gamma(link = "log"),
+  time = "year", 
+  #family = gengamma(link = "log"),
   #family = lognormal(link = "log")
 )
 
 Mod_s <- 
   sdmTMB(
   data = df_tot,
-  formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+  formula = fr_tot_sqrt ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
   time_varying = ~ 1 + pred_length_sc,
   extra_time = missing_years,
   time = "year", 
   mesh = mesh_tot,
   spatial = "on",
   spatiotemporal = "off",
-  family = gengamma(link = "log"),
+  family = Gamma(link = "log"),
+  #family = gengamma(link = "log"),
   #family = lognormal(link = "log")
 )
 
@@ -175,21 +174,25 @@ Mod_s <-
 # 
 # Mod <-
 #   sdmTMB(
-#   data = df_tot,
-#   formula = fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc,
+#   data = df_tot
+#   formula = fr_tot_sqrt ~ 0 + s(doy_sc, bs = "cc") + depth_sc,
 #   time_varying = ~ 1 + pred_length_sc,
 #   extra_time = missing_years,
 #   time = "year",
 #   mesh = mesh_tot,
 #   spatial = "on",
 #   spatiotemporal = "ar1",
-#   family = gengamma(link = "log")
-# #   family = lognormal(link = "log")
+#   family = Gamma(link = "log"),
+#   #family = gengamma(link = "log")
+#   #family = lognormal(link = "log")
 # )
 # 
 # Sys.time() - time
-# saveRDS(Mod, file = paste0("fr-tot_Mod_ar1_b",Sys.Date(),".rds"))
-Mod <- readRDS(Mod, file = paste0("fr-tot_Mod_ar1_b2024-04-10.rds"))
+#saveRDS(Mod, file = paste0("fr-tot_Mod_ar1_sq",Sys.Date(),".rds"))
+Mod <- readRDS(Mod, file = "fr-tot_Mod_ar1_sq2024-04-25.rds")
+
+# rgsim <- simulate(Mod, nsim = 1000, type = 'mle-mvn')
+# dharma_residuals(rgsim, Mod) 
 
 sanity(Mod_n)
 sanity(Mod_s)
@@ -199,10 +202,18 @@ AIC(Mod_n)
 AIC(Mod_s)
 AIC(Mod) 
 
+Mod_n_res <- sdmTMBextra::predict_mle_mcmc(Mod_n, mcmc_warmup = 200, mcmc_iter = 201)
+qqnorm(residuals(Mod_n, "mle-mcmc", mcmc_samples = Mod_n_res))
+qqline(residuals(Mod_n, "mle-mcmc", mcmc_samples = Mod_n_res))
 # Mod_res <- sdmTMBextra::predict_mle_mcmc(Mod, mcmc_warmup = 200, mcmc_iter = 201)
 # qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
 # qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
-# tidy(Mod, effects = "ran_pars", conf.int=TRUE) 
+
+Mod_res <- sdmTMBextra::predict_mle_mcmc(Mod, mcmc_warmup = 20, mcmc_iter = 21)
+qqnorm(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
+qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
+
+#tidy(Mod, effects = "ran_pars", conf.int=TRUE)
 
 ```
 
@@ -220,26 +231,26 @@ Mod_s_tv_se <- as.list(Mod_s$sd_report, "Std. Error")
 Mod_tv_est <- as.list(Mod$sd_report, "Estimate")
 Mod_tv_se <- as.list(Mod$sd_report, "Std. Error")
 
-y_n_Mod <- data.frame(year = sort(unique(Mod_n$data$year)), coef.est = Mod_n_tv_est$b_rw_t[,1,], coef.se = Mod_n_tv_se$b_rw_t[,1,], model = "nos")
-y_s_Mod <- data.frame(year = sort(unique(Mod_s$data$year)), coef.est = Mod_s_tv_est$b_rw_t[,1,], coef.se = Mod_s_tv_se$b_rw_t[,1,], model = "spatial")
-y_Mod <- data.frame(year = sort(unique(Mod$data$year)), coef.est = Mod_tv_est$b_rw_t[,1,], coef.se = Mod_tv_se$b_rw_t[,1,], model = "spatiotemporal")
+y_n_Mod <- tibble(year = my, coef.est = Mod_n_tv_est$b_rw_t[,1,], coef.se = Mod_n_tv_se$b_rw_t[,1,], model = "nos")
+y_s_Mod <- tibble(year = my, coef.est = Mod_s_tv_est$b_rw_t[,1,], coef.se = Mod_s_tv_se$b_rw_t[,1,], model = "spatial")
+y_Mod <- tibble(year = my, coef.est = Mod_tv_est$b_rw_t[,1,], coef.se = Mod_tv_se$b_rw_t[,1,], model = "spatiotemporal")
 
 bind_rows(y_Mod, y_s_Mod, y_n_Mod) |>
-  ggplot(aes(year, exp(coef.est), color = model, fill = model)) +
+  ggplot(aes(year, exp(coef.est)^2, color = model, fill = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), color = NA, alpha = 0.3) +
+  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se)^2, ymax = exp(coef.est+1.96*coef.se)^2), color = NA, alpha = 0.3) +
   scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
   ylab("est for year") # the cf gets very large for the missing year
 
 # Coefficient of length varying with year
-ypl_Mod_n <- data.frame(year = sort(unique(Mod_n$data$year)), coef.est = Mod_n_tv_est$b_rw_t[,2,], coef.se = Mod_n_tv_se$b_rw_t[,2,], model = "nos")
-ypl_Mod_s <- data.frame(year = sort(unique(Mod_s$data$year)), coef.est = Mod_s_tv_est$b_rw_t[,2,], coef.se = Mod_s_tv_se$b_rw_t[,2,], model = "spatial")
-ypl_Mod <- data.frame(year = sort(unique(Mod$data$year)), coef.est = Mod_tv_est$b_rw_t[,2,], coef.se = Mod_tv_se$b_rw_t[,2,], model = "spatiotemporal")
+ypl_Mod_n <- data.frame(year = my, coef.est = Mod_n_tv_est$b_rw_t[,2,], coef.se = Mod_n_tv_se$b_rw_t[,2,], model = "nos")
+ypl_Mod_s <- data.frame(year = my, coef.est = Mod_s_tv_est$b_rw_t[,2,], coef.se = Mod_s_tv_se$b_rw_t[,2,], model = "spatial")
+ypl_Mod <- data.frame(year = my, coef.est = Mod_tv_est$b_rw_t[,2,], coef.se = Mod_tv_se$b_rw_t[,2,], model = "spatiotemporal")
 
 bind_rows(ypl_Mod, ypl_Mod_s, ypl_Mod_n) |>
-ggplot(aes(year, exp(coef.est), fill = model, color = model)) +
+ggplot(aes(year, exp(coef.est)^2, fill = model, color = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se), ymax = exp(coef.est+1.96*coef.se)), color = NA, alpha = 0.3) +
+  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se)^2, ymax = exp(coef.est+1.96*coef.se)^2), color = NA, alpha = 0.3) +
   scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
   ylab("est for pred.length") 
 
@@ -261,9 +272,9 @@ p_s_dsc$model = "spatial"
 p_st_dsc$model = "spatiotemporal"
 
 bind_rows(p_n_dsc, p_s_dsc, p_st_dsc) |> 
-  ggplot(aes(depth_sc, exp(est), color = model, fill = model)) +
+  ggplot(aes(depth_sc, exp(est)^2, color = model, fill = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = exp(est-1.96*est_se), ymax = exp(est+1.96*est_se)), color = NA, alpha = 0.3) +
+  geom_ribbon(aes(ymin = exp(est-1.96*est_se)^2, ymax = exp(est+1.96*est_se)^2), color = NA, alpha = 0.3) +
   ylab("cond. effect depth_sc") 
 
 # Conditional effect of s(doy_sc)
@@ -280,17 +291,17 @@ p_s_doysc$model = "spatial"
 p_st_doysc$model = "spatiotemporal"
 
 bind_rows(p_n_doysc, p_s_doysc, p_st_doysc) |> 
-  ggplot(aes(doy_sc, exp(est), color = model, fill = model)) +
+  ggplot(aes(doy_sc, exp(est)^2, color = model, fill = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = exp(est-1.96*est_se), ymax = exp(est+1.96*est_se)), color = NA, alpha = 0.3) +
+  geom_ribbon(aes(ymin = exp(est-1.96*est_se)^2, ymax = exp(est+1.96*est_se)^2), color = NA, alpha = 0.3) +
   ylab("cond. effect doy_sc") 
 
 ```
 
 
 ```{r conditional effects year}
-
-nd_year <- data.frame(year = 1963:2022, depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
+pred_grid
+nd_year <- data.frame(year = my, depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
 
 p_n_year <- predict(Mod_n, newdata = nd_year, re_form = NA, se_fit = TRUE)
 p_s_year <- predict(Mod_s, newdata = nd_year, re_form = NA, se_fit = TRUE)
@@ -301,14 +312,13 @@ p_s_year$model = "spatial"
 p_st_year$model = "spatiotemporal"
 
 bind_rows(p_n_year, p_s_year, p_st_year) |> 
-  ggplot(aes(year, exp(est), color = model, fill = model)) +
+  ggplot(aes(year, exp(est)^2, color = model, fill = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = exp(est-1.96*est_se), ymax = exp(est+1.96*est_se)), color = NA, alpha = 0.3) +
+  geom_ribbon(aes(ymin = exp(est-1.96*est_se)^2, ymax = exp(est+1.96*est_se)^2), color = NA, alpha = 0.3) +
   scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
   ylab("cond. effect of year") 
 
 ```
-
 
 ## Index 
 
@@ -319,26 +329,149 @@ nd_pred_grid <- pred_grid |>
          doy_sc = 0,
          pred_length_sc = 0)
 
-ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()
+ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()# for average index
 
 pred_Mod_n <- predict(Mod_n, newdata = nd_pred_grid, return_tmb_object = TRUE)
 pred_Mod_s <- predict(Mod_s, newdata = nd_pred_grid, return_tmb_object = TRUE)
+time <- Sys.time()
 pred_Mod_st <- predict(Mod, newdata = nd_pred_grid, return_tmb_object = TRUE)
+Sys.time() - time
 
 index_n <- get_index(pred_Mod_n, area = 1/ncells, bias_correct = TRUE)
 index_s <- get_index(pred_Mod_s, area = 1/ncells, bias_correct = TRUE)
-#index_st <- get_index(pred_Mod_st, area = 1/ncells, bias_correct = TRUE)
+# time <- Sys.time() # 35 min!!!
+# index_st <- get_index(pred_Mod_st, area = 1/ncells, bias_correct = TRUE)
+# Sys.time() - time
+index_st <- readRDS(paste0(home, file = paste0("/R/main-analysis/index_st_Mod_ar1_sq2024-05-14.rds")))
 
 index_n$model = "nos" 
 index_s$model = "spatial"
-#index_st$model = "spatiotempo"
+index_st$model = "spatiotempo"
+#saveRDS(index_st, file = paste0("index_st_Mod_ar1_sq",Sys.Date(),".rds"))
 
-bind_rows(index_n, index_s)  |> #, index_st
-  ggplot(aes(year, est, color = model, fill = model)) +
+bind_rows(index_n, index_s, index_st)  |> 
+  ggplot(aes(year, est^2, color = model, fill = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, alpha = 0.3) +
+  geom_ribbon(aes(ymin = lwr^2, ymax = upr^2), color = NA, alpha = 0.3) +
   scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
   ylab("index mean") 
+
+```
+
+## Biomass weighted index
+
+```{r biom weighted index}
+
+d_stats <- read_csv(paste0(home, "/R/main-analysis/data_stats.csv"))
+
+# d_stats is used to scale the prediction grid when predictiong cod densities
+nd_pred_grid_m3 <- pred_grid |>
+  #filter(year > 1998 & year < 2000) |>
+  mutate(depth = ifelse(depth < 0, 0, depth),
+         depth_sc = (depth - mean(d_stats$depth))/sd(d_stats$depth, na.rm = TRUE),
+         oxy_sc = (oxy - d_stats$oxy_mean)/d_stats$oxy_sd,
+         sal_sc = (sal - d_stats$sal_mean)/d_stats$sal_sd,
+         temp_sc = (temp - d_stats$temp_mean)/d_stats$temp_sd,
+         depth_sq = depth^2,
+         temp_sq = temp^2,
+         year_f = as.factor(year),
+         quarter_f = as.factor(1)) |>
+  drop_na(sal_sc,
+          oxy_sc,
+          temp_sc,
+          temp_sq,
+          depth_sq)
+
+# for the Mod, the fr data is instead used to scale the prediction grid
+nd_pred_grid_Mod <- pred_grid |>
+  #filter(year > 1998 & year < 2000) |>
+  mutate(depth = ifelse(depth < 0, 0, depth),
+         depth_sc = (depth - mean(df_tot$depth))/sd(df_tot$depth),
+         doy_sc = 0,
+         pred_length_sc = 0,
+         oxy_sc = (oxy - mean(oxy, na.rm = TRUE))/sd(oxy, na.rm = TRUE),
+         sal_sc = (sal - mean(sal, na.rm = TRUE))/sd(sal, na.rm = TRUE),
+         temp_sc = (temp - mean(temp, na.rm = TRUE))/sd(temp, na.rm = TRUE),
+         depth_sq = depth^2,
+         temp_sq = temp^2,
+         year_f = as.factor(year),
+         quarter_f = as.factor(quarter)) |>
+  drop_na(sal_sc,
+          oxy_sc,
+          temp_sc,
+          temp_sq)
+
+# Predict cod cpue density with model model from Max
+m3 <- readRDS(paste0(home, file = "/R/main-analysis/m3.rds"))
+cpue_cod <- exp(predict(m3, newdata = nd_pred_grid_m3)$est)
+nd_pred_grid_Mod$density_cod <- cpue_cod
+
+# predict feeding model 
+pred_avg <- predict(Mod, newdata = nd_pred_grid_Mod, return_tmb_object = TRUE)
+
+weight_sum <- nd_pred_grid_Mod %>% 
+  #filter(depth > 10 & depth < 110) %>% 
+  group_by(year) %>% 
+  summarise(density_cod = sum(density_cod))
+
+# biomass weighted index
+index_avg <- get_index(pred_avg, area = nd_pred_grid_Mod$density_cod) |>
+  left_join(weight_sum) |>
+  mutate(est = est / density_cod,
+         lwr = lwr / density_cod,
+         upr = upr / density_cod
+  )
+
+# unweighted index
+ncells <- filter(nd_pred_grid_Mod, year == max(nd_pred_grid_Mod$year)) %>% nrow()
+index_avg_uw <- get_index(pred_avg, area = 1/ncells)
+
+# plot biomass weighted and unweighted index
+bind_rows(index_avg |> mutate(type = "w"), index_avg_uw |> mutate(type = "uw")) |>
+  ggplot(aes(year, est^2, ymin = lwr^2, ymax = upr^2, color = type, fill = type, linetype = )) +
+  geom_ribbon(alpha = 0.2, color = NA) +
+  geom_line(size = 1)
+
+
+# index by sd
+s_subdiv_index <- list()
+
+for(i in unique(nd_pred_grid_Mod$sub_div)) {
+  
+  temp_pred = nd_pred_grid_Mod |> filter(sub_div == i)
+  pred_avg_temp <- predict(Mod_s, newdata = temp_pred, return_tmb_object = TRUE)#, nsim = 10)
+
+  weight_sum_temp <- temp_pred %>% # FIXME temp grid fins inte 
+  group_by(year) %>% 
+  summarise(density_cod = sum(density_cod))
+
+  index_tempo <- get_index(pred_avg_temp, area = temp_pred$density_cod) |>
+  left_join(weight_sum_temp) |>
+  mutate(est = est / density_cod,
+         lwr = lwr / density_cod,
+         upr = upr / density_cod,
+         sub_div = i)
+
+  s_subdiv_index[[i]] = index_tempo
+}
+
+subdiv_index <- bind_rows(s_subdiv_index) 
+
+# FIXME
+subdiv_index |> 
+  filter(year < 2019) |> 
+  ggplot(aes(year, est^2, ymin = lwr^2, ymax = upr^2, color = factor(sub_div), fill = factor(sub_div))) +
+  #geom_ribbon(alpha = 0.2, color = NA) +
+    facet_wrap(~sub_div, scales = "free") +
+  geom_line(size = 1)
+
+pred_avg$data |> summarise(est = mean(exp(est)^2), .by = c(year, sub_div)) |> 
+  ggplot(aes(year, est, color = factor(sub_div))) +
+  #geom_ribbon(alpha = 0.2, color = NA) +
+    #facet_wrap(~sub_div, scales = "free") +
+  geom_line(size = 1)
+
+
 
 ```
 
@@ -532,13 +665,13 @@ pred_Mod_st$data <- pred_Mod_st$data |>
 
 pred_Mod_st$data |>
   pivot_longer(cols = c("est","est_non_rf","est_rf"), names_to = "type", values_to = "vest") |>
-  ggplot(aes(exp(vest))) +
+  ggplot(aes(exp(vest)^2)) +
   facet_wrap(~type, ncol = 2, scales = "free") +
   geom_histogram(bins = 100)
 
 # estimate
 plot_map_fc +
-  geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = exp(dec_mean_est))) +
+  geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = exp(dec_mean_est)^2)) +
   facet_wrap(~decade) +
   theme_sleek(base_size = 6) +
   geom_sf() +
@@ -547,7 +680,7 @@ plot_map_fc +
 
 # Fixed eff, i.e. fr_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc, time_varying = ~ 1 + pred_length_sc,
 plot_map_fc +
-  geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = exp(dec_mean_enrf))) +
+  geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = exp(dec_mean_enrf)^2)) +
   facet_wrap(~decade) +
   theme_sleek(base_size = 6) +
   geom_sf() +
@@ -556,7 +689,7 @@ plot_map_fc +
 
 pred_Mod_st$data |>
   pivot_longer(cols = c("omega_s", "epsilon_st"), names_to = "type", values_to = "vest") |>
-  ggplot(aes(vest)) +
+  ggplot(aes(exp(vest)^2)) +
   facet_wrap(~type, ncol = 2, scales = "free") +
   geom_histogram(bins = 100)
 
@@ -564,7 +697,7 @@ pred_Mod_st$data |>
 plot_map_fc +
   # geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = est_rf)) +
   # facet_wrap(~year) +
-  geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = dec_mean_erf)) +
+  geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = exp(dec_mean_erf)^2)) +
   facet_wrap(~decade) +
   theme_sleek(base_size = 6) +
   geom_sf() +
@@ -573,7 +706,7 @@ plot_map_fc +
 
 # spatiotemporal fields
 plot_map_fc +
-  geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = dec_mean_eps)) +
+  geom_raster(data = pred_Mod_st$data, aes(X*1000, Y*1000, fill = exp(dec_mean_eps)^2)) +
   facet_wrap(~decade) +
   theme_sleek(base_size = 6) +
   geom_sf() +

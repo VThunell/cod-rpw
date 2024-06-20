@@ -1,5 +1,5 @@
 ---
-title: "Lammska cod covariate input to data"
+title: "Add covariates to stomach data"
 author: "Max Lindmark & Viktor Thunell"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 format: 
@@ -55,10 +55,11 @@ dat <- read_csv(paste0(home, "/data/clean/stomachs3.csv")) |>
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
          pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
-         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |> 
+         doy_sc = (day_of_year - mean(day_of_year))/sd(day_of_year)) |> 
   rowwise() |> 
-  mutate(tot = sum(other, other_invert, other_fish, saduria, sprat, herring)
-)
+  mutate(tot = sum(other, other_invert, other_fish, saduria, sprat, herring)) |>
+  ungroup()
+
 
 glimpse(dat)
 
@@ -125,7 +126,7 @@ dat_haul <- dat |>
   distinct(haul.id, .keep_all = TRUE) |> 
   dplyr::select(lat, lon, year, month, month_year) #|>
 
-# This is our looping index in for loops adding environmental variables below : 
+# This is our looping index in for loops adding environmental variables below : TODO years pre 1993 and post 2022
 dat_haul_month_year <- dat_haul |> filter( year > 1992 & year < 2022) |> distinct(month_year) |> pull(month_year) 
 
 ```
@@ -196,13 +197,10 @@ years <- ifelse(years > 90, 1900 + years, 2000 + years)
 # Replace netCDF fill values with NA's
 oxy_array[oxy_array == fillvalue$value] <- NA
 
-dim(oxy_array)
-str(dim(oxy_array))
 # The third slot is the date index
 
 # Loop through all "dates", put into a list 
 dlist <- list()
-
 
 for(i in 1:length(months)) {
   
@@ -528,11 +526,12 @@ big_dat_sal <- dplyr::bind_rows(sal_data_list)
 env_dat <- left_join(big_dat_oxy, big_dat_temp, by = c("month_year", "lon", "lat")) %>% 
   left_join(big_dat_sal, by = c("month_year", "lon", "lat"))
 
+gc()
+
 # Now join these data with the full_dat
 dat_env <- dat |> 
   left_join(env_dat, by = c("month_year", "lon", "lat"))
 ```
-
 
 ## Add in cod density 
 
@@ -570,14 +569,14 @@ df_m3 <- dat_env |>
 # Predict cod cpue density with model model from Max  
 cpue_cod <- predict(m3, newdata = df_m3) |>
   mutate(density_cod = exp(est)) |>
-  dplyr::select(lat, lon, month_year, density_cod)
+  dplyr::select(lat, lon, month_year, density_cod) |>
+  distinct()
 
-dat <- dat |>
-  left_join(cpue_cod, by = c("month_year", "lon", "lat"))
-
+dat_env2 <- dat_env |> 
+  left_join(cpue_cod) 
 ```
 
 ```{r save}
 # Save data
-write_csv(dat_env, paste0(home, "/data/clean/stom_env.csv"))
+write_csv(dat_env2, paste0(home, "/data/clean/stom_env.csv"))
 ```

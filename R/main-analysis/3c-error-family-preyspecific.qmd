@@ -38,14 +38,13 @@ invisible(lapply(pkgs, library, character.only = T))
 
 # Source code for map plots
 # You need:
-devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+#devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+#remotes::install_github("pbs-assess/sdmTMB", dependencies = TRUE)
+#remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
 devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
 options(ggplot2.continuous.colour = "viridis")
-remotes::install_github("pbs-assess/sdmTMB", dependencies = TRUE)
-#remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
 
 library(ggsidekick)
-#library(sdmTMB)
 theme_set(theme_sleek())
 
 # Set path
@@ -62,19 +61,14 @@ home <- here::here()
 
 df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         herring_sc = (herring - mean(herring))/sd(herring),
-         saduria_sc = (saduria - mean(saduria))/sd(saduria),          
-         sprat_sc = (sprat - mean(sprat))/sd(sprat),
-         other_invert_sc = (other_invert - mean(other_invert))/sd(other_invert),
-         other_sc = (other - mean(other))/sd(other),
-         other_fish_sc = (other_fish - mean(other_fish))/sd(other_fish),
-         benth_fish_sc = (benth_fish - mean(benth_fish))/sd(benth_fish),
          year_f = as.factor(year),
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
          pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
-         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)
-) 
+         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |> 
+  rowwise() |> 
+  mutate(tot = sum(other_or_NA, other_invert, benth_fish, other_fish, saduria, sprat, herring)
+)
 
 glimpse(df)
 ```
@@ -87,26 +81,33 @@ dfqs <- df |>
          between(fr_spr, 0, 1),
          between(fr_her, 0, 1),
          between(fr_sad, 0, 1),
-         between(fr_other, 0, 1),
+         between(fr_other_or_NA, 0, 1),
          between(fr_other_invert, 0, 1),
          between(fr_other_fish, 0, 1),
          between(fr_benth_fish, 0, 1),
          !is.na(day_of_year)) |>
-  select(starts_with("fr")) |>
+  dplyr::select(starts_with("fr")) |>
   map(\(sp) quantile(sp, c(0.95,0.98,0.99)))
 
 dfqs
 
-# filter remove empty stomachs, values above the 99th percentile and day of year that are NA
+# filter remove empty stomachs, values above the 99th percentile of fr_tot and day of year that are NA
 df_prs <- df |>
   filter(fr_tot > 0,
-         between(fr_spr, 0, signif(dfqs$fr_spr[3])),
-         between(fr_her, 0, signif(dfqs$fr_her[3])),
-         between(fr_sad, 0, signif(dfqs$fr_sad[3])),
-         between(fr_other, 0, signif(dfqs$fr_other[3])),
-         between(fr_other_invert, 0, signif(dfqs$fr_other_invert[3])),
-         between(fr_other_fish, 0, signif(dfqs$fr_other_fish[3])),
-         between(fr_benth_fish, 0, signif(dfqs$fr_benth_fish[3])),
+         # between(fr_spr, 0, signif(dfqs$fr_spr[3])),
+         # between(fr_her, 0, signif(dfqs$fr_her[3])),
+         # between(fr_sad, 0, signif(dfqs$fr_sad[3])),
+         # between(fr_other_or_NA, 0, signif(dfqs$fr_other_or_NA[3])),
+         # between(fr_other_invert, 0, signif(dfqs$fr_other_invert[3])),
+         # between(fr_other_fish, 0, signif(dfqs$fr_other_fish[3])),
+         # between(fr_benth_fish, 0, signif(dfqs$fr_benth_fish[3])),
+         between(fr_spr, 0, signif(dfqs$fr_tot[3])),
+         between(fr_her, 0, signif(dfqs$fr_tot[3])),
+         between(fr_sad, 0, signif(dfqs$fr_tot[3])),
+         between(fr_other_or_NA, 0, signif(dfqs$fr_tot[3])),
+         between(fr_other_invert, 0, signif(dfqs$fr_tot[3])),
+         between(fr_other_fish, 0, signif(dfqs$fr_tot[3])),
+         between(fr_benth_fish, 0, signif(dfqs$fr_tot[3])),
          !is.na(day_of_year)) |>
   mutate(decade = round(year/10) * 10)
 
@@ -119,7 +120,7 @@ df_prs |>
   summarise(mean_fr_spr = mean(fr_spr),
             mean_fr_her = mean(fr_her),
             mean_fr_sad = mean(fr_sad),
-            mean_fr_other = mean(fr_other),
+            mean_fr_other_or_NA = mean(fr_other_or_NA),
             mean_fr_other_invert = mean(fr_other_invert),
             mean_fr_other_fish = mean(fr_other_fish),
             mean_fr_benth_fish = mean(fr_benth_fish)) |>
@@ -145,7 +146,7 @@ df_prs |>
   summarise(mean_fr_spr = mean(fr_spr),
             mean_fr_her = mean(fr_her),
             mean_fr_sad = mean(fr_sad),
-            mean_fr_other = mean(fr_other),
+            mean_fr_other_or_NA = mean(fr_other_or_NA),
             mean_fr_other_invert = mean(fr_other_invert),
             mean_fr_other_fish = mean(fr_other_fish),
             mean_fr_benth_fish = mean(fr_benth_fish)) |>
@@ -157,7 +158,7 @@ df_prs |>
   scale_x_continuous(breaks = seq(1963, 2023, by = 20))
 
 ```
-I dont like the look of these plots, the fr cut off is very obvious. What are the consequences of removing those uncommon observations? If I incude to much of it, the fit becomes poor though...
+The fr cut off is very obvious. What are the consequences of removing those uncommon observations? If I incude to much of it, the fit becomes poor though...
 
 ```{r}
 
@@ -165,7 +166,7 @@ df_prs |>
   dplyr::select(starts_with("fr")) |>
   pivot_longer( cols = everything() ,values_to = "fr", names_to = "sp") |>
   filter(fr > 0 & fr <= 1) |> 
-  ggplot(aes(fr)) +
+  ggplot(aes(sqrt(fr))) +
   geom_histogram(bins = 100) +
   facet_wrap(~sp, scales = "free_y") +
   labs(title = "continuous part")
@@ -181,8 +182,7 @@ df_prs |>
 
 # Saduria fr
 
-```{r fit saduria mods}
-
+```{r fit saduria mods tweedie}
 # missing years
 my <- min(df_prs$year):max(df_prs$year)
 missing_years <- my[!my %in% unique(df_prs$year)]
@@ -190,154 +190,179 @@ missing_years <- my[!my %in% unique(df_prs$year)]
 # mesh
 mesh_prs <- make_mesh(df_prs, c("X", "Y"), cutoff = 6)
 
-# reduce number of years to fit Tweedie model
-df_prs_sel <- df_prs |> filter( year %in% c(1993:2020))
-mesh_prs_sel <- make_mesh(df_prs_sel, c("X", "Y"), cutoff = 6)
-my_sel <- min(df_prs_sel$year):max(df_prs_sel$year)
-missing_years_sel <- my[!my %in% unique(df_prs_sel$year)]
-
 sadMod_n1 <- # same as tot, tweedie
   sdmTMB(
-    #data = df_prs,
-    data = df,
-    formula = fr_sad ~ 0 + s(doy_sc, bs = "cc") + depth_sc,
-    time_varying = ~ 1 + pred_length_sc,
+    data = df_prs,
+    formula = fr_sad^(1/2.5) ~ 0 + s(doy_sc, bs = "cc") + depth_sc,
+    time_varying = ~ 1, #+ pred_length_sc,
+    #spatial_varying = ~ year_f + pred_length_sc,
     extra_time = missing_years,
     time = "year",
     mesh = mesh_prs,
-    spatial = "off",
+    spatial = "on",
     spatiotemporal = "off",
     family = tweedie(link = "log")
 )
 
-sadMod_n2 <- # same as tot, delta_gamma poisson
+sadMod_n1b <- # same as tot, tweedie
   sdmTMB(
     data = df_prs,
-    formula = fr_sad ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+    formula = fr_sad^(1/2.5) ~ 0 + year_f*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc,
+    mesh = mesh_prs,
+    spatial = "on",
+    spatiotemporal = "off",
+    family = tweedie(link = "log")
+)
+
+sanity(sadMod_n1)
+sanity(sadMod_n1b)
+AIC(sadMod_n1)
+AIC(sadMod_n1b)
+
+qqnorm(residuals(sadMod_n1))
+qqline(residuals(sadMod_n1))
+qqnorm(residuals(sadMod_n1b))
+qqline(residuals(sadMod_n1b))
+
+res_sadMod_n1 <- residuals(sadMod_n1, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n1, mcmc_iter = 201, mcmc_warmup = 200))
+qqnorm(res_sadMod_n1)
+qqline(res_sadMod_n1)
+
+```
+High values are off.
+
+Ok, lets try delta gamma 
+
+```{r fit saduria mods gamma}
+sadMod_n2 <- # same as above but delta_gamma poisson
+  sdmTMB(
+    data = df_prs,
+    formula = fr_sad^(1/3) ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
     time_varying = ~ 1 + pred_length_sc,
     extra_time = missing_years,
     time = "year", 
     mesh = mesh_prs,
     spatial = "off",
     spatiotemporal = "off",
+    #family = delta_gengamma(type = "poisson-link")
     family = delta_gamma(type = "poisson-link")
 )
 
-sadMod_n3 <- # deltagamma year_f*pred_length_sc
+sadMod_n2b <- # deltagamma year_f*pred_length_sc
   sdmTMB(
     data = df_prs,
-    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
+    formula = fr_sad^(1/3) ~ 0 + year_f*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
     mesh = mesh_prs,
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(type = "poisson-link")
+    # family = delta_gengamma(type = "poisson-link")
 )
 
-sadMod_n4 <-  # deltagamma year_f*pred_length_sc
-  sdmTMB(
-    data = df_prs,
-    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + depth_sc, 
-    mesh = mesh_prs,
-    spatial = "off",
-    spatiotemporal = "off",
-    family = delta_gamma(type = "poisson-link")
-)
-
-sanity(sadMod_n1)
 sanity(sadMod_n2)
-sanity(sadMod_n3)
-sanity(sadMod_n4)
-
-AIC(sadMod_n1)
+sanity(sadMod_n2b)
 AIC(sadMod_n2)
-AIC(sadMod_n3)
-AIC(sadMod_n4)
+AIC(sadMod_n2b)
 
-r_mod <- bind_rows(tibble(res = residuals(sadMod_n1, model = 1), mod = "tweedie"),
-                  tibble(res = residuals(sadMod_n2, model = 1), mod = "2one"),
+r_mod <- bind_rows(tibble(res = residuals(sadMod_n2, model = 1), mod = "2one"),
                   tibble(res = residuals(sadMod_n2, model = 2), mod = "2two"),
-                  tibble(res = residuals(sadMod_n3, model = 1), mod = "3one"),
-                  tibble(res = residuals(sadMod_n3, model = 2), mod = "3two"))
-#                  tibble(res = residuals(sadMod_n4, model = 1), mod = "4one"),
-#                  tibble(res = residuals(sadMod_n4, model = 2), mod = "4two"))
-r_mod |>
-  filter(mod %in% c("2one","2two", "tweedie")) |>
-  ggplot( aes(sample = res)) +
-  stat_qq(shape = 1) +
-  stat_qq_line() +
-  facet_wrap(~mod, ncol = 2) +
-  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+                  tibble(res = residuals(sadMod_n2b, model = 1), mod = "2bone"),
+                  tibble(res = residuals(sadMod_n2b, model = 2), mod = "2btwo"))
+
+# Resids for gengamma
+# gsim2 <- simulate(sadMod_n2, nsim = 1000, type = 'mle-mvn')
+# dharma_residuals(gsim2, sadMod_n2)
+# gsim3 <- simulate(sadMod_n3, nsim = 1000, type = 'mle-mvn')
+# dharma_residuals(gsim3, sadMod_n3)
 
 r_mod |>
-  filter(mod %in% c("3one", "3two", "4one","4two")) |>
+  filter(mod %in% c("2one", "2two", "2bone","2btwo")) |>
   ggplot( aes(sample = res)) +
   stat_qq(shape = 1) +
   stat_qq_line() +
   facet_wrap(~mod, ncol = 2) +
   labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
 
-# model 3 MCMC
-res_sadMod_n3_1_1000 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 1001, model = 1, mcmc_warmup = 1000))
-res_sadMod_n3_2_1000 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 1001, model = 2, mcmc_warmup = 1000))
+# the mle-mvn residuals for thr delta models produces either "longer object length is not a multiple of shorter object length" NaNs resulting in NA or NAs produces.
+# model 1 MCMC
 
-# res_sadMod_n3_1_2000 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 2001, model = 1, mcmc_warmup = 2000))
-# res_sadMod_n3_2_2000 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 2001, model = 2, mcmc_warmup = 2000))
-#7
-# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
-# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
+samps1_sadMod_n2 <- sdmTMBextra::predict_mle_mcmc(sadMod_n1, mcmc_iter = 201, mcmc_warmup = 200, model = 1)
+samps2_sadMod_n2 <- sdmTMBextra::predict_mle_mcmc(sadMod_n1, mcmc_iter = 201, mcmc_warmup = 200, model = 2)
+qqnorm(residuals(sadMod_n2, "mle-mcmc", mcmc_samples = samps1_sadMod_n2, model = 1))
+qqline(residuals(sadMod_n2, "mle-mcmc", mcmc_samples = samps1_sadMod_n2, model = 1))
+qqnorm(residuals(sadMod_n2, "mle-mcmc", mcmc_samples = samps2_sadMod_n2, model = 2))
+qqline(residuals(sadMod_n2, "mle-mcmc", mcmc_samples = samps2_sadMod_n2, model = 2))
 # 
-# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
-# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
-
-r_modMCMC <- bind_rows(tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_200, model = 1), mod = "1_1000"),
-                    tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_2_200, model = 2), mod = "2_1000"))#,
-                   # tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_2000, model = 1), mod = "1_2000"),
-                   # tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_2_2000, model = 2), mod = "2_2000"))
-
-r_modMCMC |> # 94/156 rows containing non-finite outside scale range. 78 000 data points make 156 000 resdiduals... why?
-  #filter(mod %in% c("3one", "3two", "4one","4two")) |>
-  ggplot( aes(sample = res)) +
-  stat_qq(shape = 1) +
-  #stat_qq_line() +
-  facet_wrap(~mod, ncol = 2) +
-  #theme(aspect.ratio=1) +
-  labs(title = "model 3", y = "Sample Quantiles", x = "Theoretical Quantiles")
-
-# model 2 MCMC
-res_sadMod_n2_1_200 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 201, model = 1, mcmc_warmup = 200))
-res_sadMod_n2_2_200 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 201, model = 2, mcmc_warmup = 200))
-
-res_sadMod_n2_1_2000 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 2001, model = 1, mcmc_warmup = 2000))
-res_sadMod_n2_2_2000 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 2001, model = 2, mcmc_warmup = 2000))
-#7
-# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
-# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
+# # model 2b MCMC
+# res_sadMod_n2 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 1001, model = 1, mcmc_warmup = 1000))
+# res_sadMod_n3_2_1000 <- residuals(sadMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n3, mcmc_iter = 1001, model = 2, mcmc_warmup = 1000))
 # 
-# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
-# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
-
-r_modMCMC2 <- bind_rows(tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_1_200, model = 1), mod = "1_200"),
-                   tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_2_200, model = 2), mod = "2_200"),
-                   tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_1_2000, model = 1), mod = "1_2000"),
-                   tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_2_2000, model = 2), mod = "2_2000"))
-
-r_modMCMC2 |> 
-  #filter(mod %in% c("3one", "3two", "4one","4two")) |>
-  ggplot( aes(sample = res)) +
-  stat_qq(shape = 1) +
-  stat_qq_line() +
-  facet_wrap(~mod, ncol = 2) +
-  labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+# # 50% infinites
+# length(which(is.na(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_1000, model = 1))))/length(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_1000, model = 1))
+# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_1000, model = 1))
+# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_1000, model = 1))
+# qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_2_1000, model = 2))
+# qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_2_1000, model = 2))
+# qqnorm(residuals(sadMod_n3, model = 1))
+# qqline(residuals(sadMod_n3, model = 1))
+# qqnorm(residuals(sadMod_n3, model = 2))
+# qqline(residuals(sadMod_n3, model = 2))
+# 
+# 
+# r_modMCMC <- bind_rows(tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_200, model = 1), mod = "1_1000"),
+#                     tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_2_200, model = 2), mod = "2_1000"))#,
+#                    # tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_1_2000, model = 1), mod = "1_2000"),
+#                    # tibble(res = residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3_2_2000, model = 2), mod = "2_2000"))
+# 
+# r_modMCMC |> # 94/156 rows containing non-finite outside scale range. 78 000 data points make 156 000 resdiduals... why?
+#   #filter(mod %in% c("3one", "3two", "4one","4two")) |>
+#   ggplot( aes(sample = res)) +
+#   stat_qq(shape = 1) +
+#   #stat_qq_line() +
+#   facet_wrap(~mod, ncol = 2) +
+#   #theme(aspect.ratio=1) +
+#   labs(title = "model 3", y = "Sample Quantiles", x = "Theoretical Quantiles")
+# 
+# # model 2 MCMC
+# res_sadMod_n2_1_200 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 201, model = 1, mcmc_warmup = 200))
+# res_sadMod_n2_2_200 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 201, model = 2, mcmc_warmup = 200))
+# 
+# res_sadMod_n2_1_2000 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 2001, model = 1, mcmc_warmup = 2000))
+# res_sadMod_n2_2_2000 <- residuals(sadMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n2, mcmc_iter = 2001, model = 2, mcmc_warmup = 2000))
+# 
+# #7
+# # qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
+# # qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 1))
+# # 
+# # qqnorm(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
+# # qqline(residuals(sadMod_n3, "mle-mcmc", mcmc_samples = res_sadMod_n3, model = 2))
+# 
+# r_modMCMC2 <- bind_rows(tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_1_200, model = 1), mod = "1_200"),
+#                    tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_2_200, model = 2), mod = "2_200"),
+#                    tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_1_2000, model = 1), mod = "1_2000"),
+#                    tibble(res = residuals(sadMod_n2, "mle-mcmc", mcmc_samples = res_sadMod_n2_2_2000, model = 2), mod = "2_2000"))
+# 
+# r_modMCMC2 |> 
+#   #filter(mod %in% c("3one", "3two", "4one","4two")) |>
+#   ggplot( aes(sample = res)) +
+#   stat_qq(shape = 1) +
+#   stat_qq_line() +
+#   facet_wrap(~mod, ncol = 2) +
+#   labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
+# 
+# hist(residuals(sadMod_n2, model = 1))
+# hist(residuals(sadMod_n2, model = 2))
+# max(residuals(sadMod_n2))
 
 ```
 
-The model with a formula same as fr_tot and tweedie is quite nice but will likely take a lot of time compared to a hurdle. Tweedie crashes R when fitting on the whole times series. This will be a problem with an spattemp model that takes more time and memory. A hurdle model with a formula same as fr_tot makes a poor fit due using time_varying. The continuous part of mod2 is nice but the pres/abs model is bent, using mcmcm residuals instead makes the continuous part bent. mod3 and 4 are similar but 3 has the lowest AIC and has the fixed effect of day of the year.  **I´ll go with 3**. But I´ll just show the lognormal models for completeness.   
+The model with a formula same as fr_tot and tweedie is similar to the fit of the fr_tot. A gamma hurdle model with a formula same as fr_tot makes an ok fit (with MCMC residuals) but there is 50 % infiintie residual values.  The continuous part of mod2 is nice but the pres/abs model is bent, using mcmcm residuals instead makes the continuous part bent. mod3 and 4 are similar but 3 has the lowest AIC and has the fixed effect of day of the year.  **I´ll go with 3**. But I´ll just show the lognormal models for completeness.   
 
-```{r hurdle lognormals}
+```{r delta lognormals}
 sadMod_n5 <- # delta logn year_f*pred_length_sc
   sdmTMB(
     data = df_prs,
-    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
+    formula = fr_sad^(1/3) ~ 0 + factor(year)*pred_length_sc + s(doy_sc, bs = "cc") + depth_sc, 
     mesh = mesh_prs,
     spatial = "off",
     spatiotemporal = "off",
@@ -347,7 +372,7 @@ sadMod_n5 <- # delta logn year_f*pred_length_sc
 sadMod_n6 <-  # delta logn year_f*pred_length_sc no doy
   sdmTMB(
     data = df_prs,
-    formula = fr_sad ~ 0 + factor(year)*pred_length_sc + depth_sc, 
+    formula = fr_sad^(1/3) ~ 0 + factor(year)*pred_length_sc + depth_sc, 
     mesh = mesh_prs,
     spatial = "off",
     spatiotemporal = "off",
@@ -365,39 +390,39 @@ r_df <- bind_rows(tibble(res = residuals(sadMod_n5, model = 1), mod = "5one"),
                   tibble(res = residuals(sadMod_n6, model = 1), mod = "6one"),
                   tibble(res = residuals(sadMod_n6, model = 2), mod = "6two"))
 
-
 ggplot(r_df, aes(sample = res)) +
   stat_qq(shape = 1) +
   stat_qq_line() +
   facet_wrap(~mod, ncol = 2) +
   labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
 
-res_sadMod_n5 <- residuals(sadMod_n5, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n5, mcmc_iter = 201, mcmc_warmup = 200))
-
-qqnorm(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 1))
-qqline(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 1))
-
-qqnorm(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 2))
-qqline(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 2))
+# res_sadMod_n5 <- residuals(sadMod_n5, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sadMod_n5, mcmc_iter = 201, mcmc_warmup = 200))
+# 
+# qqnorm(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 1))
+# qqline(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 1))
+# 
+# qqnorm(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 2))
+# qqline(residuals(sadMod_n5, "mle-mcmc", mcmc_samples = res_sadMod_n5, model = 2))
 ```
 
-The lognormals qqs are not as nice as the gammas for the continouous part. *I´ll go with the hurdle gamma mod3 for saduria* and hope the same will work for the other prey species.  
+The lognormals qqs are not as nice as the gammas for the continouous part but the tweedie looks best woth the . 
 
-# Sprat fr
+# Sprat feeding ratio
 
 ```{r fit sprat model}
 
 sprMod_n2 <- # same as tot, delta_gamma poisson
   sdmTMB(
     data = df_prs,
-    formula = fr_spr ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
+    formula = fr_spr^(1/3) ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
     time_varying = ~ 1 + pred_length_sc,
     extra_time = missing_years,
     time = "year", 
     mesh = mesh_prs,
     spatial = "off",
     spatiotemporal = "off",
-    family = delta_gamma(type = "poisson-link")
+    #family = delta_gamma(type = "poisson-link")
+    family = tweedie(link = "log")
 )
 
 sprMod_n3 <- # deltagamma year_f*pred_length_sc
@@ -443,12 +468,13 @@ ggplot(r_df, aes(sample = res)) +
   facet_wrap(~mod, ncol = 2) +
   labs(y = "Sample Quantiles", x = "Theoretical Quantiles")
 
-res_sprMod_n3 <- residuals(sprMod_n3, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sprMod_n3, mcmc_iter = 201, mcmc_warmup = 200))
+res_sprMod_n2 <- residuals(sprMod_n2, type = "mle-mcmc", mcmc_samples =  sdmTMBextra::predict_mle_mcmc(sprMod_n2, mcmc_iter = 201, mcmc_warmup = 200))
 
-qqnorm(residuals(sprMod_n3, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 1))
-qqline(residuals(sprMod_n3, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 1))
+qqnorm(res_sprMod_n2)
+qqline(res_sprMod_n2)
+#qqline(residuals(sprMod_n2, "mle-mcmc", mcmc_samples = res_sprMod_n2))#, model = 1))
 
-qqnorm(residuals(sprMod_n3, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 2))
+qqnorm(residuals(sprMod_n2, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 2))
 qqline(residuals(sprMod_n3, "mle-mcmc", mcmc_samples = res_sprMod_n3, model = 2))
 ```
 

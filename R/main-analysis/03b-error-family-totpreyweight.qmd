@@ -57,23 +57,16 @@ home <- here::here()
 ```{r}
 #| message: false
 #| warning: false
-
 df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         herring_sc = (herring - mean(herring))/sd(herring),
-         saduria_sc = (saduria - mean(saduria))/sd(saduria),          
-         sprat_sc = (sprat - mean(sprat))/sd(sprat),
-         other_invert_sc = (other_invert - mean(other_invert))/sd(other_invert),
-         other_sc = (other - mean(other))/sd(other),
-         other_fish_sc = (other_fish - mean(other_fish))/sd(other_fish),
-         benth_fish_sc = (benth_fish - mean(benth_fish))/sd(benth_fish),
          year_f = as.factor(year),
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
          pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
          doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |> 
   rowwise() |> 
-  mutate(tot = sum(other, other_invert, benth_fish, other_fish, saduria, sprat, herring))
+  mutate(tot = sum(other_or_NA, other_invert, benth_fish, other_fish, saduria, sprat, herring)
+)
 
 glimpse(df)
 

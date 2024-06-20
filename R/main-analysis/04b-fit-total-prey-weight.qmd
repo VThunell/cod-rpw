@@ -67,13 +67,6 @@ home <- here::here()
 
 df <- read_csv(paste0(home, "/data/clean/stomachs.csv")) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
-         herring_sc = (herring - mean(herring))/sd(herring),
-         saduria_sc = (saduria - mean(saduria))/sd(saduria),          
-         sprat_sc = (sprat - mean(sprat))/sd(sprat),
-         other_invert_sc = (other_invert - mean(other_invert))/sd(other_invert),
-         other_sc = (other - mean(other))/sd(other),
-         other_fish_sc = (other_fish - mean(other_fish))/sd(other_fish),
-         benth_fish_sc = (benth_fish - mean(benth_fish))/sd(benth_fish),
          year_f = as.factor(year),
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
@@ -99,10 +92,10 @@ plot_map +
 
 # remove empty stomachs and day of year that are NA
 df_tot <- df |>
-  filter( !is.na(day_of_year),
-          fr_tot > 0 & fr_tot <= 0.37,
-          tot > 0) |>
- mutate(decade = round(year/10) * 10)
+  filter(!is.na(day_of_year),
+         fr_tot > 0 & fr_tot <= 0.37,
+         tot > 0) |>
+  mutate(decade = round(year/10) * 10)
 
 # mesh
 mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
@@ -116,7 +109,7 @@ my <- min(df_tot$year):max(df_tot$year)
 missing_years <- my[!my %in% unique(df_tot$year)]
 
 df_tot |>
-  ggplot(aes(pred_length,fr_tot, color = year)) +
+  ggplot(aes(pred_length,fr_tot_sqrt, color = year)) +
   geom_point() +
   labs(title = "feeeding ratio, 0 to 0.37 (99th percentile)")
 
@@ -246,7 +239,7 @@ ggplot(aes(year, exp(coef.est), color = model)) +
 
 ```
 
-
+# Måste bara skalera tillbaka från sqrt
 ```{r index}
 nd_pred_grid <- pred_grid |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
