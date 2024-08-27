@@ -59,6 +59,9 @@ TODO UPDATE
 
 ```{r read data}
 # New database data
+
+# New data (from 12 July) that contains less stomachs: StomachContent_0712474536 
+
 fi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/File_information.csv"))
 hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInformation.csv"), 
                col_types = list(
