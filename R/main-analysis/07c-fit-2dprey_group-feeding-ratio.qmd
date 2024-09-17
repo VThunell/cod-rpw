@@ -43,9 +43,6 @@ invisible(lapply(pkgs, library, character.only = T))
 # devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
 devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
 options(ggplot2.continuous.colour = "viridis")
-#remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
-#install.packages("remotes")
-#remotes::install_github("pbs-assess/sdmTMB", dependencies = TRUE)
 
 library(ggsidekick)
 theme_set(theme_sleek())
@@ -62,13 +59,13 @@ home <- here::here()
 #| warning: false
 #| cache: false
 
-df <- read_csv(paste0(home, "/data/clean/stom_env.csv")) |>
+df <- readRDS(paste0(home, "/data/clean/stom_env.rds")) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
          year_f = as.factor(year),
          month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
          pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
-         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |> 
+         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |>
   rowwise() |> 
   mutate(tot = sum(other, other_invert, other_fish, saduria, sprat, herring)
 ) |> ungroup()
@@ -95,28 +92,26 @@ q99 <- quantile(df$fr_tot, .99)
 df_tot <- df |> 
   filter(fr_tot > 0 & fr_tot < q99)
 
-# For env data model (from 1993)
+# For env data model
 df_tot_env <- df_tot |>
-  filter(year > 1992) |>
-  drop_na(oxy,
-          sal,
-          temp) |>
+  # drop_na(oxy, # removes no rows. 20240917
+  #         sal,
+  #         temp) |>
   mutate(fr_tot_sqrt = sqrt(fr_tot),
          decade = round(year/10) * 10,
-         year_f = as.factor(year),
          oxy_sc = (oxy - mean(oxy, na.rm = TRUE))/sd(oxy, na.rm = TRUE),
-         sal_sc = (sal - mean(sal, na.rm = TRUE))/sd(df$sal, na.rm = TRUE),
+         sal_sc = (sal - mean(sal, na.rm = TRUE))/sd(sal, na.rm = TRUE),
          temp_sc = (temp - mean(temp, na.rm = TRUE))/sd(temp, na.rm = TRUE),
-         density_cod_sc = (density_cod - mean(density_cod, na.rm = TRUE))/sd(density_cod, na.rm = TRUE) )
+         log_density_cod_sc = (log_density_cod - mean(log_density_cod, na.rm = TRUE))/sd(log_density_cod, na.rm = TRUE) )
 
 ```
 
 ## Long format 
 ```{r}
 df_long_env <- df_tot_env |>
-#df_long <- df_tot |>
+  #filter(year > 200) |>
   pivot_longer(cols = starts_with("fr") & !contains("tot"),  values_to = "value", names_to = "prey_group") |>
-  filter(!prey_group == "fr_other") |> # needed to avoid ln_smooth_sigma too large and also not of interest
+  filter(!prey_group == "fr_other") |> # needed to avoid ln_smooth_sigma too large and also not of interest and small
   mutate(prey_group_f = as.factor(prey_group),
          val_cube = value^(1/3),
          year_sc = (year - mean(year))/sd(year))
@@ -145,14 +140,18 @@ df_long_env |>
 
 ```{r Run and check env model}
 # untransformed and sqrt transf not converging 
-mesh_long <- make_mesh(df_long_env, c("X", "Y"), cutoff = 6)
+# df_long_env <- df_long_env |>
+#   filter(between(year, 1975, 1980))
+mesh_long <- make_mesh(df_long_env, c("X", "Y"), cutoff = 5)
 plot(mesh_long)
 
 # missing years
+
 my <- min(df_long_env$year):max(df_long_env$year)
 missing_years <- my[!my %in% unique(df_long_env$year)]
 
-# Mod_2denv <-
+# the Mod_2denv_s takes 6 hours to run
+# Mod_2denv_s <-
 #   sdmTMB(
 #   data = df_long_env,
 #   mesh = mesh_long,
@@ -168,24 +167,59 @@ missing_years <- my[!my %in% unique(df_long_env$year)]
 #   time = "year",
 #   extra_time = missing_years,
 #   spatial = "off",
-#   spatiotemporal = "iid",
+#   spatiotemporal = "off",
 #   spatial_varying = ~ 0 + prey_group_f,
 #   family = delta_lognormal(type = "poisson-link")
 # )
+gc()
+Mod_2denv_iid1_nox <-
+  sdmTMB(
+  data = df_long_env,
+  mesh = mesh_long,
+  formula = val_cube ~ 0 +
+    prey_group_f +
+    s(pred_length_sc, year_sc, by = prey_group_f) +
+    s(doy_sc, bs = "cc") +
+    depth_sc +
+    sal_sc +
+    temp_sc +
+    oxy_sc,
+    #density_cod_sc,
+  time = "year",
+  #extra_time = missing_years,
+  spatial = "off",
+  spatiotemporal = "iid",
+  spatial_varying = ~ 0 + prey_group_f,
+  family = delta_lognormal(type = "poisson-link")
+  #family = delta_lognormal(type = "standard")
+  #family = tweedie()
+)
+gc()
+#saveRDS(Mod_2denv_ar1, file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_env",Sys.Date(),".rds"))
+#saveRDS(Mod_2denv_iid1, file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_enviid",Sys.Date(),".rds"))
+#Mod_2denv <- readRDS(file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_env2024-09-08.rds"))
+Mod_2denv <- readRDS(file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_enviid2024-09-16.rds"))
+#Mod_2denv <- readRDS(file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_env2024-06-17.rds"))
+Mod_2denv
+# saveRDS(Mod_2denv, file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_env",Sys.Date(),".rds"))
+# Mod_2denv <- readRDS(file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_env2024-06-17.rds"))
 
-#saveRDS(Mod_2denv, file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_env",Sys.Date(),".rds"))
-Mod_2denv <- readRDS(file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_env2024-06-17.rds"))
+sdmTMB::predict(Mod_2denv_iid1)
 
 sanity(Mod_2denv)
-
-Mod_res2 <- residuals(Mod_2denv, model = 2)
-Mod_res1 <- residuals(Mod_2denv, model = 1)
+sanity(Mod_2denv_iid1)
+Mod_res2 <- residuals(Mod_2denv_ar1, model = 2)
+Mod_res1 <- residuals(Mod_2denv_ar1, model = 1)
 # 12% infinite residual values in model 1 
 sum(!is.finite(Mod_res1))/length(Mod_res1)
 stats::qqnorm(Mod_res1)
 stats::qqline(Mod_res1)
 stats::qqnorm(Mod_res2)
 stats::qqline(Mod_res2)
+
+tidy(Mod_2denv, effects = "fixed", model = 2, conf.int = TRUE, exponentiate = TRUE) %>%
+                         filter(term %in% c("sigma_O", "sigma_E"))
+?tidy.sdmTMB
 ```
 
 # Coefficient estimates
@@ -202,7 +236,6 @@ mfull_est1 <- bind_rows(tidy(Mod_2denv, effects = "ran_par", model = 1, conf.int
 
   mutate(term = factor(term))
 
-tidy(Mod_2denv, effects = "ran_par", model = 2, conf.int = TRUE)
 # Sort the terms so that random effects are at the top...
 mfull_est1 <- mfull_est1 %>%
   mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
@@ -233,17 +266,20 @@ ggplot(aes( estimate, reorder(term, term2), color = model)) +
 
 ## Effects of predator length over time
 ```{r predict plot 2d smooth}
-nd_Mod2d_env <- expand.grid("pred_length_sc" = seq(min(Mod_2denv$data$pred_length_sc),
-                                                   max(Mod_2denv$data$pred_length_sc),
+predtst = predict(Mod_2denv_iid1) # causes crash
+
+nd_Mod2d_env <- expand.grid("pred_length_sc" = seq(min(Mod_2denv_iid1$data$pred_length_sc),
+                                                   max(Mod_2denv_iid1$data$pred_length_sc),
                                                    length.out = 30), 
-                            "prey_group_f" = levels(Mod_2denv$data$prey_group_f),
-                            "year_sc" = seq(min(Mod_2denv$data$year_sc),
-                                            max(Mod_2denv$data$year_sc),
-                                            length.out = length(unique(Mod_2denv$data$year))+1 ))#, "year" = sort(unique(Mod_2denv$data$year)))
+                            "prey_group_f" = levels(Mod_2denv_iid1$data$prey_group_f),
+                            "year_sc" = seq(min(Mod_2denv_iid1$data$year_sc),
+                                            max(Mod_2denv_iid1$data$year_sc),
+                                            length.out = length(unique(Mod_2denv_iid1$data$year))-1 ))#, "year" = sort(unique(Mod_2denv$data$year)))
 
 nd_Mod2d_env <- nd_Mod2d_env |>
   mutate(depth_sc = 0,
-         year = 1993,
+         year = 2022,
+         year_sc = min(Mod_2denv_iid1$data$year_sc),
          doy_sc = 0,
          depth_sc = 0,
          sal_sc = 0,
@@ -251,7 +287,7 @@ nd_Mod2d_env <- nd_Mod2d_env |>
          oxy_sc = 0,
          density_cod_sc = 0)
 
-pred2d = predict(Mod_2denv, newdata = nd_Mod2d_env, re_form = NA)
+pred2d = predict(Mod_2denv_iid1, newdata = nd_Mod2d_env, re_form = NA)
 #saveRDS(pred2d, file = paste0(home, "/R/main-analysis/fr-pg_Mod_2ds_noenv",Sys.Date(),".rds"))
 
 pred2d2 <- pred2d |> # for clarity of possion link theory
@@ -305,10 +341,10 @@ pred2d3 |>
   filter(between(pred_length, 10, 60)) |>
   mutate(norm = (predd)/max(predd), .by = prey_group_f) |>
   ggplot() + 
-  geom_raster(aes(year, pred_length, fill = norm)) +
+  geom_raster(aes(year, pred_length, fill = predd)) +
   geom_line(data = d, aes(year, value, linetype = name)) +
   facet_wrap(~prey_group_f, labeller = labeller(prey_group_f = preygroups)) +
-  scale_fill_viridis() +
+  scale_fill_viridis(trans= "sqrt") +
   scale_x_continuous(breaks = seq(1995, 2020, by=5)) +
   scale_y_continuous(breaks = seq(15, 55, by=10)) +
   labs(fill = "Max. scaled fr value", linetype = "Catch length IQR", 
@@ -417,7 +453,7 @@ nd_pred_grid <- replicate_df(nd_pred_grid, "prey_group_f",
                              
 #temp_pred2d <- predict(Mod_2denv, newdata = nd_pred_grid, return_tmb_object = TRUE)
 #saveRDS(temp_pred2d, file = paste0(home, "/R/main-analysis/fr-pg_temp_pred2d",Sys.Date(),".rds"))
-temp_pred2d <- readRDS(file = paste0(home, "/R/main-analysis/fr-pg_temp_pred2d2024-06-20.rds"))
+temp_pred2d <- readRDS(file = paste0(home, "/R/main-analysis/fr-pg_temp_pred2d2024-06-24.rds"))
 
 # ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow() # for average index
 # 
@@ -442,20 +478,22 @@ temp_pred2d <- readRDS(file = paste0(home, "/R/main-analysis/fr-pg_temp_pred2d20
 ## Map of spatiotemporal random fields
 
 ```{r}
-
+tv <- temp_pred2d$data
 plotdf <- temp_pred2d$data |>
   mutate(decade = round(year/10) * 10) |>
-  mutate(dec_mean_eps = mean(epsilon_st1+epsilon_st2, na.omit = TRUE), .by = c(decade, prey_group_f, X, Y)) #random spatial and spatiotemporal
-         
-sum(is.na(plotdf$dec_mean_eps))
+  mutate(dec_mean_eps = mean(epsilon_st1+epsilon_st2, na.omit = TRUE), .by =
+  c(decade, prey_group_f, X, Y)) #random spatial and spatiotemporal
+  
 plot_map_fc +
-  #geom_raster(data = plotdf, aes(X*1000, Y*1000, fill = exp(est1+est2))) +
-  geom_raster(data = plotdf, aes(X*1000, Y*1000, fill = dec_mean_eps)) +
-  facet_grid(~decade) +#, labeller = labeller(prey_group_f = preygroups)) +
+  #geom_raster(data = plotdf, aes(X*1000, Y*1000, fill = epsilon_st1+epsilon_st2)) +
+  geom_raster(data = plotdf, aes(X*1000, Y*1000, fill = epsilon_st1+epsilon_st2)) +
+  #geom_raster(data = plotdf, aes(X*1000, Y*1000, fill = dec_mean_eps)) +
+  #facet_grid(prey_group_f~year) +#, labeller = labeller(prey_group_f = preygroups)) +
+  facet_wrap(~year, ncol=5) +
   theme_sleek(base_size = 6) +
   geom_sf() +
-  scale_fill_viridis(trans = "sqrt") +
-  labs( title = "Decadal mean spatiotemporal random effects")
+  scale_fill_viridis() #+
+#  labs( title = "Decadal mean spatiotemporal random effects")
 
 ```
 

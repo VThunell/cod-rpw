@@ -64,46 +64,55 @@ home <- here::here()
 df <- read_csv(paste0(home, "/data/clean/stom_env.csv")) |>
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
          year_f = as.factor(year),
-         month_f = as.factor(month),
          ices_rect = as.factor(ices_rect),
          pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
-         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |> 
+         doy_sc = (day_of_year - mean(day_of_year)/sd(day_of_year))) |> 
   rowwise() |> 
   mutate(tot = sum(other, other_invert, other_fish, saduria, sprat, herring)
-)
+) |> ungroup()
+
 
 glimpse(df)
 
-pred_grid <- bind_rows(readRDS(paste0(home, "/data/clean/pred_grid_(1_2).rds")),
-                       readRDS(paste0(home, "/data/clean/pred_grid_(2_2).rds")))
+pred_grid <- readRDS(paste0(home, "/data/clean/pred_grid.rds"))
+# pred_grid <- bind_rows(readRDS(paste0(home, "/data/clean/pred_grid_(1_2).rds")),
+#                        readRDS(paste0(home, "/data/clean/pred_grid_(2_2).rds")))
 # pred_grid <- bind_rows(read_csv(paste0(home, "/data/clean/pred_grid_(1_2)_max.csv")),
-#                         read_csv(paste0(home, "/data/clean/pred_grid_(2_2)_max.csv")))
+#                        read_csv(paste0(home, "/data/clean/pred_grid_(2_2)_max.csv")))
 
 plot_map +
-  geom_raster(data = pred_grid, aes(X*1000, Y*1000, fill = depth))
+  geom_raster(data = pred_grid, aes(X*1000, Y*1000, fill = oxy))
 
 ```
-
 
 ## Filter
 
 ```{r}
-
-# remove empty stomachs and day of year that are NA.  0.37 is 99th percentile
+# remove empty stomachs and high values. 0.25 is 99th percentile
 q99 <- quantile(df$fr_tot, .99)
 df_tot <- df |> 
-  filter( fr_tot > 0 & fr_tot < q99,
-         !is.na(day_of_year)) |> # should tehse get the mean day_of_year instead?
- mutate(fr_tot_sqrt = sqrt(fr_tot),
-        decade = round(year/10) * 10)
+  filter(fr_tot > 0 & fr_tot < q99)
 
-hist(df_tot$pred_length)
+# For env data model (from 1993)
+df_tot_env <- df_tot |>
+  filter(year < 2022) |>
+  drop_na(oxy,
+          sal, 
+          temp) |>
+  mutate(fr_tot_sqrt = sqrt(fr_tot),
+         decade = round(year/10) * 10,
+         oxy_sc = (oxy - mean(oxy, na.rm = TRUE))/sd(oxy, na.rm = TRUE),
+         sal_sc = (sal - mean(sal, na.rm = TRUE))/sd(sal, na.rm = TRUE),
+         temp_sc = (temp - mean(temp, na.rm = TRUE))/sd(temp, na.rm = TRUE),
+         log_density_cod_sc = (log_density_cod - mean(log_density_cod))/sd(log_density_cod, na.rm = TRUE),
+         year_sc = (year - mean(year))/sd(year))
+
 ```
 
-## We suspect that the amount of food in relation to cod weight in stomachs is decreasing and depends on predator length:
+## The amount of food in relation to cod weight in stomachs is decreasing and depends on predator length:
 
 ```{r}
-df_tot |> 
+df_tot_env |> 
   group_by(year) |> 
   summarise(mean_fr_tot = mean(fr_tot),
             sd_fr_tot = sd(fr_tot)) |>
@@ -112,84 +121,97 @@ df_tot |>
   geom_ribbon(aes(ymin = mean_fr_tot - sd_fr_tot, ymax = mean_fr_tot + sd_fr_tot), color = NA, alpha = 0.3) +
   scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
 
-df_tot |> 
+df_tot_env |> 
   ggplot(aes(pred_length, fr_tot, color = year))  +
   geom_point() +
   stat_smooth(method = "gam", formula = y ~ s(x, k=3))
 
-# there is something with 1965 making high estimates of fr (~8) for spatial and spattemp random fields. See maps
-df_tot |>
-  filter(year == 1965) |>
-  ggplot(aes(pred_length, fr_tot, color = year))  +
+df_tot_env |> 
+  ggplot(aes(pred_length/pred_weight, fr_tot, color = year))  +
   geom_point() +
-  #facet_wrap(~year)
+  stat_smooth(method = "gam", formula = y ~ s(x, k=3)) +
+
+df_tot_env |> 
+  ggplot(aes(pred_length, tot, color = year))  +
+  geom_point() +
   stat_smooth(method = "gam", formula = y ~ s(x, k=3))
+
 ```
 
 ## Fit spatiotemporal, spatial and not spatial models 
 
 ```{r fit Mods}
 # mesh
-mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
+mesh_tot <- make_mesh(df_tot_env, c("X", "Y"), cutoff = 6)
  
 # reduce number of years to reduce fitting time
 #df_tot_sel <- df_tot |> filter( year %in% c(2012:2022))
 # mesh_tot_sel <- make_mesh(df_tot, c("X", "Y"), cutoff = 6)
 
 # missing years
-my <- min(df_tot$year):max(df_tot$year)
-missing_years <- my[!my %in% unique(df_tot$year)]
+my <- min(df_tot_env$year):max(df_tot_env$year)
+missing_years <- my[!my %in% unique(df_tot_env$year)]
 
-Mod_n <- 
+Mod_n <-
   sdmTMB(
-  data = df_tot,
-  formula = fr_tot_sqrt ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
-  time_varying = ~ 1 + pred_length_sc,
+  data = df_tot_env,
+  formula = fr_tot_sqrt ~ 1 +
+    s(pred_length_sc, year_sc) +
+    s(doy_sc, bs = "cc") +
+    depth_sc +
+    sal_sc +
+    temp_sc +
+    oxy_sc +
+    log_density_cod_sc,
   extra_time = missing_years,
   mesh = mesh_tot,
   spatial = "off",
   spatiotemporal = "off",
-  family = Gamma(link = "log"),
-  time = "year", 
-  #family = gengamma(link = "log"),
-  #family = lognormal(link = "log")
+  family = Gamma(link = "log")
 )
 
 Mod_s <- 
   sdmTMB(
-  data = df_tot,
-  formula = fr_tot_sqrt ~ 0 + s(doy_sc, bs = "cc") + depth_sc, 
-  time_varying = ~ 1 + pred_length_sc,
+  data = df_tot_env,
+  formula = fr_tot_sqrt ~ 1 +
+    s(pred_length_sc, year_sc) +
+    s(doy_sc, bs = "cc") +
+    depth_sc +
+    sal_sc + 
+    temp_sc + 
+    oxy_sc +
+    log_density_cod_sc,
   extra_time = missing_years,
-  time = "year", 
   mesh = mesh_tot,
   spatial = "on",
   spatiotemporal = "off",
+  time = "year",
   family = Gamma(link = "log"),
-  #family = gengamma(link = "log"),
-  #family = lognormal(link = "log")
 )
 
 # time <- Sys.time()
-# 
+#
 # Mod <-
 #   sdmTMB(
-#   data = df_tot
-#   formula = fr_tot_sqrt ~ 0 + s(doy_sc, bs = "cc") + depth_sc,
-#   time_varying = ~ 1 + pred_length_sc,
+#   data = df_tot_env,
+#   formula = fr_tot_sqrt ~ 1 +
+#     s(pred_length_sc, year_sc) +
+#     s(doy_sc, bs = "cc") +
+#     depth_sc +
+#     sal_sc +
+#     temp_sc +
+#     oxy_sc +
+#     log_density_cod_sc,
 #   extra_time = missing_years,
-#   time = "year",
 #   mesh = mesh_tot,
 #   spatial = "on",
 #   spatiotemporal = "ar1",
-#   family = Gamma(link = "log"),
-#   #family = gengamma(link = "log")
-#   #family = lognormal(link = "log")
+#   time = "year",
+#   family = Gamma(link = "log")
 # )
-# 
-# Sys.time() - time
+#Sys.time() - time
 #saveRDS(Mod, file = paste0("fr-tot_Mod_ar1_sq",Sys.Date(),".rds"))
-Mod <- readRDS(Mod, file = "fr-tot_Mod_ar1_sq2024-04-25.rds")
+Mod <- readRDS(Mod, file = "fr-tot_Mod_ar1_sq2024-06-25.rds")
 
 # rgsim <- simulate(Mod, nsim = 1000, type = 'mle-mvn')
 # dharma_residuals(rgsim, Mod) 
@@ -197,7 +219,7 @@ Mod <- readRDS(Mod, file = "fr-tot_Mod_ar1_sq2024-04-25.rds")
 sanity(Mod_n)
 sanity(Mod_s)
 sanity(Mod)
-
+tidy(Mod)
 AIC(Mod_n)
 AIC(Mod_s)
 AIC(Mod) 
@@ -215,108 +237,143 @@ qqline(residuals(Mod, "mle-mcmc", mcmc_samples = Mod_res))
 
 #tidy(Mod, effects = "ran_pars", conf.int=TRUE)
 
+qqnorm(residuals(Mod_s))
+qqline(residuals(Mod_s))
+
 ```
 
 ## Plot coefficient estimates
+```{r coeff est}
 
-```{r plot coefficients for Mod}
+# Extract random and fixed coefficients from the full model and continous part
+mfull_est <- bind_rows(tidy(Mod, effects = "ran_par", conf.int = TRUE) |>
+                          filter(term %in% c("sigma_O", "sigma_E")),
+                        tidy(Mod, effects = "fixed", conf.int = TRUE)  |>
+                          filter(!grepl('year', term))) |>
+  mutate(term = factor(term))
 
-# Coefficient estimate of year
-Mod_n_tv_est <- as.list(Mod_n$sd_report, "Estimate")
-Mod_n_tv_se <- as.list(Mod_n$sd_report, "Std. Error")
+# Sort the terms so that random effects are at the top...
+mfull_est <- mfull_est |>
+  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
+         model = "binomial")
 
-Mod_s_tv_est <- as.list(Mod_s$sd_report, "Estimate")
-Mod_s_tv_se <- as.list(Mod_s$sd_report, "Std. Error")
-
-Mod_tv_est <- as.list(Mod$sd_report, "Estimate")
-Mod_tv_se <- as.list(Mod$sd_report, "Std. Error")
-
-y_n_Mod <- tibble(year = my, coef.est = Mod_n_tv_est$b_rw_t[,1,], coef.se = Mod_n_tv_se$b_rw_t[,1,], model = "nos")
-y_s_Mod <- tibble(year = my, coef.est = Mod_s_tv_est$b_rw_t[,1,], coef.se = Mod_s_tv_se$b_rw_t[,1,], model = "spatial")
-y_Mod <- tibble(year = my, coef.est = Mod_tv_est$b_rw_t[,1,], coef.se = Mod_tv_se$b_rw_t[,1,], model = "spatiotemporal")
-
-bind_rows(y_Mod, y_s_Mod, y_n_Mod) |>
-  ggplot(aes(year, exp(coef.est)^2, color = model, fill = model)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se)^2, ymax = exp(coef.est+1.96*coef.se)^2), color = NA, alpha = 0.3) +
-  scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
-  ylab("est for year") # the cf gets very large for the missing year
-
-# Coefficient of length varying with year
-ypl_Mod_n <- data.frame(year = my, coef.est = Mod_n_tv_est$b_rw_t[,2,], coef.se = Mod_n_tv_se$b_rw_t[,2,], model = "nos")
-ypl_Mod_s <- data.frame(year = my, coef.est = Mod_s_tv_est$b_rw_t[,2,], coef.se = Mod_s_tv_se$b_rw_t[,2,], model = "spatial")
-ypl_Mod <- data.frame(year = my, coef.est = Mod_tv_est$b_rw_t[,2,], coef.se = Mod_tv_se$b_rw_t[,2,], model = "spatiotemporal")
-
-bind_rows(ypl_Mod, ypl_Mod_s, ypl_Mod_n) |>
-ggplot(aes(year, exp(coef.est)^2, fill = model, color = model)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = exp(coef.est-1.96*coef.se)^2, ymax = exp(coef.est+1.96*coef.se)^2), color = NA, alpha = 0.3) +
-  scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
-  ylab("est for pred.length") 
+mfull_est |>
+ filter(term %in% c("sigma_E", "sigma_O", "depth_sc", "sal_sc", "temp_sc", "oxy_sc", "log_density_cod_sc")) |>
+ggplot(aes( estimate, reorder(term, term2))) +
+  geom_vline(xintercept = 0, linetype = 2, color = "gray40", alpha = 0.5) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high), width = 0) +
+  geom_point(size = 2.5) +
+  labs(y = "Estimate", x = "Standardized coefficient") 
 
 ```
 
-## Conditional effects 
+## Smooth predator length over time
 
-```{r conditional fixed effects}
-# Conditional effect of depth_sc
+```{r predict plot 2d smooth}
+nd_Mod <- expand.grid(pred_length_sc = seq(min(df_tot_env$pred_length_sc),
+                                             max(df_tot_env$pred_length_sc),
+                                             length.out = 30),
+                      year_sc = seq(min(df_tot_env$year_sc),
+                                      max(df_tot_env$year_sc),
+                                      length.out = length(unique(df_tot_env$year_sc))+1 )) |>
+  mutate(year = year_sc*sd(df_tot_env$year) + mean(df_tot_env$year),
+         pred_length = pred_length_sc*sd(df_tot_env$pred_length) + mean(df_tot_env$pred_length),
+         depth_sc = 0,
+         doy_sc = 0,
+         sal_sc = 0,
+         temp_sc = 0,
+         oxy_sc = 0,
+         log_density_cod_sc = 0)
 
-nd_dsc <- data.frame(year = 1993, depth_sc = seq(min(df_tot$depth_sc), max(df_tot$depth_sc), length.out = 50), pred_length_sc = 0, doy_sc = 0)
+predMod <- predict(Mod, newdata = nd_Mod, type = "response", re_form = NA)
 
-p_n_dsc <- predict(Mod_n, newdata = nd_dsc, re_form = NA, se_fit = TRUE)
-p_s_dsc <- predict(Mod_s, newdata = nd_dsc, re_form = NA, se_fit = TRUE)
-p_st_dsc <- predict(Mod, newdata = nd_dsc, re_form = NA, se_fit = TRUE)
+predMod |> 
+  ggplot(aes(year_sc, pred_length_sc, fill = est)) + 
+  geom_raster() +
+  scale_fill_viridis() +
+  coord_cartesian(expand = 0) #+
 
-p_n_dsc$model = "nos" 
-p_s_dsc$model = "spatial"
-p_st_dsc$model = "spatiotemporal"
+#visreg2d(Mod_s, yvar = "pred_length_sc", xvar = "year_sc", scale=c("response"), plot.type = "gg")
+#predMod_test <- predict(Mod_s, type = "response", re_form = NA)
+#plot(predMod_test$est, df_tot_env$fr_tot_sqrt);abline(a= 0, b= 1,col= "red")
+  
+d <- read_csv(paste0(home, "/data/clean/catch_by_length.csv"))
+d <- d %>% 
+  filter(species == "cod") %>% 
+  filter(density > 0) %>% 
+  summarise(lwr = quantile(length_cm, prob = 0.25),
+            median = quantile(length_cm, prob = 0.5),
+            upr = quantile(length_cm, prob = 0.75),
+            .by = year) %>% 
+  pivot_longer(-year) 
 
-bind_rows(p_n_dsc, p_s_dsc, p_st_dsc) |> 
-  ggplot(aes(depth_sc, exp(est)^2, color = model, fill = model)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = exp(est-1.96*est_se)^2, ymax = exp(est+1.96*est_se)^2), color = NA, alpha = 0.3) +
-  ylab("cond. effect depth_sc") 
 
-# Conditional effect of s(doy_sc)
-nd_doysc <- data.frame(year = 1993, depth_sc = 0, pred_length_sc = 0, doy_sc = seq(min(df_tot$doy_sc), max(df_tot$doy_sc), length.out = 50))
+predMod |>
+  filter(between(pred_length, 5, 70)) |>
+  ggplot() + 
+  geom_raster(aes(year, pred_length, fill = est)) +
+  geom_line(data = d, aes(year, value, linetype = name)) +
+  scale_fill_viridis() +
+  scale_x_continuous(breaks = seq(1995, 2020, by=5)) +
+  scale_y_continuous(breaks = seq(10, 60, by=10)) +
+  labs(fill = "Max. scaled fr value", linetype = "Catch length IQR", 
+       y = "Cod length", x = "Year") +
+  coord_cartesian(expand = 0)
+  
+ggsave(paste0(home, "/figures/main/2d_year_predlength.pdf"), width = 25, height = 15, units = "cm")
 
-p_n_doysc <- predict(Mod_n, newdata = nd_doysc, re_form = NA, se_fit = TRUE)
-p_s_doysc <- predict(Mod_s, newdata = nd_doysc, re_form = NA, se_fit = TRUE)
-p_st_doysc <- predict(Mod, newdata = nd_doysc, re_form = NA, se_fit = TRUE)
-
-p_s_doysc$doy_sc[which.max(exp(p_s_doysc$est))] # scaled day of maximum fr
-
-p_n_doysc$model = "nos" 
-p_s_doysc$model = "spatial"
-p_st_doysc$model = "spatiotemporal"
-
-bind_rows(p_n_doysc, p_s_doysc, p_st_doysc) |> 
-  ggplot(aes(doy_sc, exp(est)^2, color = model, fill = model)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = exp(est-1.96*est_se)^2, ymax = exp(est+1.96*est_se)^2), color = NA, alpha = 0.3) +
-  ylab("cond. effect doy_sc") 
-
+# make_plot <- function(data, vars)  {
+#   data |>
+#     mutate(year = year_sc *sd(df_tot$year) + mean(df_tot$year),
+#            pred_length = pred_length_sc *sd(df_tot$pred_length) + mean(df_tot$pred_length)) |>
+#     filter(prey_group_f == vars) |>
+#     ggplot(aes(year, pred_length, fill = n*w)) +
+#     #ggplot(aes(year_sc, pred_length_sc, fill = r)) +
+#     #ggplot(aes(year, pred_length, fill = p)) +
+#     geom_raster() +
+#     scale_fill_viridis(trans = "sqrt") +
+#     labs(title = vars) +
+#     theme(legend.position = "bottom")
+# }
+# 
+# plots <- levels(df_tot$prey_group_f) |>
+#   map(~ make_plot(pred2d2, .x))    
+# patchwork::wrap_plots(plots) + plot_layout(axes = "collect")#, guides = "collect")
 ```
 
+```{r conditional of fixed effects}
+visreg(Mod, xvar = "depth_sc", scale=c("response"), plot.type = "gg")
+visreg(Mod, xvar = "oxy_sc", scale=c("response"), plot.type = "gg")
+visreg(Mod, xvar = "temp_sc", scale=c("response"), plot.type = "gg")
+visreg(Mod, xvar = "sal_sc", scale=c("response"), plot.type = "gg")
+```
 
-```{r conditional effects year}
-pred_grid
+```{r effects year}
+nd_Mod_year <- nd_Mod |>
+  mutate(pred_length_sc = 0)
+
+predMod_year <- predict(Mod, newdata = nd_Mod_year, type = "response", re_form = NA)
+
+predMod_year |> 
+  ggplot(aes(year, est)) + 
+  geom_line() 
+
 nd_year <- data.frame(year = my, depth_sc = 0, pred_length_sc = 0, doy_sc = 0)
 
-p_n_year <- predict(Mod_n, newdata = nd_year, re_form = NA, se_fit = TRUE)
-p_s_year <- predict(Mod_s, newdata = nd_year, re_form = NA, se_fit = TRUE)
-p_st_year <- predict(Mod, newdata = nd_year, re_form = NA, se_fit = TRUE)
+p_n_year <- predict(Mod_n, newdata = nd_Mod_year, re_form = NA, se_fit = TRUE)
+p_s_year <- predict(Mod_s, newdata = nd_Mod_year, re_form = NA, se_fit = TRUE)
+p_st_year <- predict(Mod, newdata = nd_Mod_year, re_form = NA, se_fit = TRUE)
 
 p_n_year$model = "nos" 
 p_s_year$model = "spatial"
 p_st_year$model = "spatiotemporal"
 
 bind_rows(p_n_year, p_s_year, p_st_year) |> 
-  ggplot(aes(year, exp(est)^2, color = model, fill = model)) +
+  ggplot(aes(year, est, color = model, fill = model)) +
   geom_line() +
-  geom_ribbon(aes(ymin = exp(est-1.96*est_se)^2, ymax = exp(est+1.96*est_se)^2), color = NA, alpha = 0.3) +
-  scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
-  ylab("cond. effect of year") 
+  geom_ribbon(aes(ymin = (est-1.96*est_se), ymax = (est+1.96*est_se)), color = NA, alpha = 0.3) +
+  scale_x_continuous(breaks = seq(min(df_tot_env$year), max(df_tot_env$year), by = 5)) +
+  labs( y = "cond. effect of year") 
 
 ```
 
@@ -324,35 +381,36 @@ bind_rows(p_n_year, p_s_year, p_st_year) |>
 
 ```{r index}
 nd_pred_grid <- pred_grid |>
+  drop_na(oxy, sal, temp) |>
   mutate(depth = ifelse(depth < 0, 0, depth),
-         depth_sc = (depth - mean(df_tot$depth))/sd(df_tot$depth),
+         depth_sc = (depth - mean(df_tot_env$depth))/sd(df_tot_env$depth),
+         oxy_sc = (oxy - mean(df_tot_env$oxy))/sd(df_tot_env$oxy),
+         sal_sc = (sal - mean(df_tot_env$sal))/sd(df_tot_env$sal),
+         temp_sc = (temp - mean(df_tot_env$temp))/sd(df_tot_env$temp),
+         log_density_cod_sc = (log_density_cod - mean(df_tot_env$log_density_cod))/sd(df_tot_env$log_density_cod),
          doy_sc = 0,
-         pred_length_sc = 0)
+         pred_length_sc = 0,
+         year_sc = (year - mean(df_tot_env$year))/sd(df_tot_env$year))
 
 ncells <- filter(nd_pred_grid, year == max(nd_pred_grid$year)) |> nrow()# for average index
 
-pred_Mod_n <- predict(Mod_n, newdata = nd_pred_grid, return_tmb_object = TRUE)
-pred_Mod_s <- predict(Mod_s, newdata = nd_pred_grid, return_tmb_object = TRUE)
-time <- Sys.time()
 pred_Mod_st <- predict(Mod, newdata = nd_pred_grid, return_tmb_object = TRUE)
+time <- Sys.time() # 35 min!!!
+index_st <- get_index(pred_Mod_st, area = 1/ncells)
 Sys.time() - time
 
-index_n <- get_index(pred_Mod_n, area = 1/ncells, bias_correct = TRUE)
-index_s <- get_index(pred_Mod_s, area = 1/ncells, bias_correct = TRUE)
-# time <- Sys.time() # 35 min!!!
-# index_st <- get_index(pred_Mod_st, area = 1/ncells, bias_correct = TRUE)
-# Sys.time() - time
 index_st <- readRDS(paste0(home, file = paste0("/R/main-analysis/index_st_Mod_ar1_sq2024-05-14.rds")))
 
-index_n$model = "nos" 
-index_s$model = "spatial"
+# index_n$model = "nos" 
+# index_s$model = "spatial"
 index_st$model = "spatiotempo"
 #saveRDS(index_st, file = paste0("index_st_Mod_ar1_sq",Sys.Date(),".rds"))
 
-bind_rows(index_n, index_s, index_st)  |> 
-  ggplot(aes(year, est^2, color = model, fill = model)) +
+#bind_rows(index_n, index_s, index_st)  |> 
+index_st  |> 
+  ggplot(aes(year, est)) +
   geom_line() +
-  geom_ribbon(aes(ymin = lwr^2, ymax = upr^2), color = NA, alpha = 0.3) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, alpha = 0.3) +
   scale_x_continuous(breaks = seq(min(df_tot$year), max(df_tot$year), by = 10)) +
   ylab("index mean") 
 
@@ -361,88 +419,148 @@ bind_rows(index_n, index_s, index_st)  |>
 ## Biomass weighted index
 
 ```{r biom weighted index}
+# 
+# d_stats <- read_csv(paste0(home, "/data/clean/data_stats.csv"))
+# data_stats_st <- d_stats |>
+#   summarise(depth_mean = mean(depth, na.omit = TRUE),
+#             depth_sd = sd(depth),
+#             sal_mean = mean(sal, na.omit = TRUE),
+#             sal_sd = sd(sal),
+#             oxy_mean = mean(oxy, na.omit = TRUE),
+#             oxy_sd = sd(oxy),
+#             temp_mean = mean(temp, na.omit = TRUE),
+#             temp_sd = sd(temp))
+# 
+# # d_stats is used to scale the prediction grid when predicting cod densities
+# nd_pred_grid_m3 <- pred_grid |>
+#   drop_na(sal, oxy, temp, temp, depth) |>
+#   mutate(depth = ifelse(depth < 0, 0, depth),
+#          depth_sc = (depth - mean(d_stats$depth))/sd(d_stats$depth, na.rm = TRUE),
+#          oxy_sc = (oxy - d_stats$oxy_mean)/d_stats$oxy_sd,
+#          sal_sc = (sal - d_stats$sal_mean)/d_stats$sal_sd,
+#          temp_sc = (temp - d_stats$temp_mean)/d_stats$temp_sd,
+#          depth_sq = depth^2,
+#          temp_sq = temp^2,
+#          year_f = as.factor(year),
+#          quarter_f = as.factor(1))
+#   
+# 
+# # Predict cod cpue density with model model from Max
+# m3 <- readRDS(paste0(home, file = "/R/main-analysis/m3.rds"))
+# cpue_cod <- predict(m3, newdata = nd_pred_grid_m3)$est
+# nd_pred_grid_Mod$log_density_cod <- cpue_cod
+# 
+# # for the Mod, the fr data is instead used to scale the prediction grid
+# nd_pred_grid_Mod <- pred_grid |>
+#   drop_na(sal, oxy, temp, temp, depth) |>
+#   mutate(depth = ifelse(depth < 0, 0, depth),
+#          depth_sc = (depth - mean(df_tot$depth))/sd(df_tot$depth),
+#          doy_sc = 0,
+#          pred_length_sc = 0,
+#          oxy_sc = (oxy - mean(oxy, na.rm = TRUE))/sd(oxy, na.rm = TRUE),
+#          sal_sc = (sal - mean(sal, na.rm = TRUE))/sd(sal, na.rm = TRUE),
+#          temp_sc = (temp - mean(temp, na.rm = TRUE))/sd(temp, na.rm = TRUE))
+#   
+# # predict feeding model 
+pred_avg_sim <- predict(Mod, newdata = nd_pred_grid |> filter(depth > 10 & depth < 110), return_tmb_object = TRUE, nsim = 500)
 
-d_stats <- read_csv(paste0(home, "/R/main-analysis/data_stats.csv"))
-
-# d_stats is used to scale the prediction grid when predictiong cod densities
-nd_pred_grid_m3 <- pred_grid |>
-  #filter(year > 1998 & year < 2000) |>
-  mutate(depth = ifelse(depth < 0, 0, depth),
-         depth_sc = (depth - mean(d_stats$depth))/sd(d_stats$depth, na.rm = TRUE),
-         oxy_sc = (oxy - d_stats$oxy_mean)/d_stats$oxy_sd,
-         sal_sc = (sal - d_stats$sal_mean)/d_stats$sal_sd,
-         temp_sc = (temp - d_stats$temp_mean)/d_stats$temp_sd,
-         depth_sq = depth^2,
-         temp_sq = temp^2,
-         year_f = as.factor(year),
-         quarter_f = as.factor(1)) |>
-  drop_na(sal_sc,
-          oxy_sc,
-          temp_sc,
-          temp_sq,
-          depth_sq)
-
-# for the Mod, the fr data is instead used to scale the prediction grid
-nd_pred_grid_Mod <- pred_grid |>
-  #filter(year > 1998 & year < 2000) |>
-  mutate(depth = ifelse(depth < 0, 0, depth),
-         depth_sc = (depth - mean(df_tot$depth))/sd(df_tot$depth),
-         doy_sc = 0,
-         pred_length_sc = 0,
-         oxy_sc = (oxy - mean(oxy, na.rm = TRUE))/sd(oxy, na.rm = TRUE),
-         sal_sc = (sal - mean(sal, na.rm = TRUE))/sd(sal, na.rm = TRUE),
-         temp_sc = (temp - mean(temp, na.rm = TRUE))/sd(temp, na.rm = TRUE),
-         depth_sq = depth^2,
-         temp_sq = temp^2,
-         year_f = as.factor(year),
-         quarter_f = as.factor(quarter)) |>
-  drop_na(sal_sc,
-          oxy_sc,
-          temp_sc,
-          temp_sq)
-
-# Predict cod cpue density with model model from Max
-m3 <- readRDS(paste0(home, file = "/R/main-analysis/m3.rds"))
-cpue_cod <- exp(predict(m3, newdata = nd_pred_grid_m3)$est)
-nd_pred_grid_Mod$density_cod <- cpue_cod
-
-# predict feeding model 
-pred_avg <- predict(Mod, newdata = nd_pred_grid_Mod, return_tmb_object = TRUE)
-
-weight_sum <- nd_pred_grid_Mod %>% 
-  #filter(depth > 10 & depth < 110) %>% 
-  group_by(year) %>% 
-  summarise(density_cod = sum(density_cod))
-
+weight_sum <- nd_pred_grid |> 
+  filter(depth > 10 & depth < 110) |> 
+  summarise(density_cod = sum(exp(log_density_cod)), .by = year)
 # biomass weighted index
-index_avg <- get_index(pred_avg, area = nd_pred_grid_Mod$density_cod) |>
+
+areacod <- nd_pred_grid |> 
+  filter(depth > 10 & depth < 110) |> 
+  mutate(density_cod = exp(log_density_cod))
+time <- Sys.time() 
+# index_avgb_sim <- get_index_sims(pred_Mod_st, area = exp(nd_pred_grid$log_density_cod), bias_correct = TRUE) 
+index_avgb_sim <- get_index_sims(pred_avg_sim, area = areacod$density_cod)
+Sys.time() - time
+
+index_avg2 <- index_avgb_sim |> 
   left_join(weight_sum) |>
   mutate(est = est / density_cod,
          lwr = lwr / density_cod,
-         upr = upr / density_cod
-  )
-
-# unweighted index
-ncells <- filter(nd_pred_grid_Mod, year == max(nd_pred_grid_Mod$year)) %>% nrow()
-index_avg_uw <- get_index(pred_avg, area = 1/ncells)
+         upr = upr / density_cod)
 
 # plot biomass weighted and unweighted index
-bind_rows(index_avg |> mutate(type = "w"), index_avg_uw |> mutate(type = "uw")) |>
-  ggplot(aes(year, est^2, ymin = lwr^2, ymax = upr^2, color = type, fill = type, linetype = )) +
+bind_rows(index_avg2 |> mutate(type = "w"), index_st |> mutate(type = "uw")) |>
+  ggplot(aes(year, est, ymin = lwr, ymax = upr, color = type, fill = type)) +
   geom_ribbon(alpha = 0.2, color = NA) +
+  geom_line()
+```
+
+```{r compare with growth and condition}
+gr <- read_csv(paste0(home, "/data/clean/growth_cond_index.csv")) |>
+  filter(!variable == "condition")
+co <- read_csv(paste0(home, "/data/clean/all_condition.csv"))
+sh <- read_csv(paste0(home, "/data/clean/pelagic_biomass_sd24_sd28.csv")) |>
+  rename(variable = species,
+          value = biomass,
+         year = Year)
+gr$variable <- gr$variable |>
+  recode(#condition = 'condition (Lindmark 2023)'), 
+         growth = 'growth (Mion 2020)')
+
+# index_st_long <- readRDS(paste0(home, file = paste0("/R/main-analysis/index_st_Mod_ar1_sq2024-05-14.rds"))) |>
+#   mutate(variable = "feeding rat. (unwei. long)") |>
+#   rename(value = est) |>
+#   select(year, value, lwr, upr, variable)
+  
+# di<- bind_rows(index_avg |> mutate(variable = "feeding ratio (weigh. env. cov.)"), 
+#                index_avg_uw |> mutate(variable = "feeding ratio (unwei. env. cov)")) |>
+di <- index_avg2 |> 
+  mutate(variable = "feeding rat. (weigh. short)") |>
+  rename(value = est) |>
+  dplyr::select(year, value, lwr, upr, variable) |>
+  bind_rows(sh, co, gr)
+  
+di |>
+  filter(!variable %in% c("Herring"),
+         year > 1992) |>
+  mutate(value_z = (value - mean(value))/sd(value), .by = variable) %>% 
+  ggplot(aes(year, value_z, group = variable, color = variable)) +
+  geom_line() + 
+  theme_light(base_size = 14)
+
+bind_rows(index_avg |> mutate(type = "w"), index_avg_uw |> mutate(type = "uw, short"), index_st_long |> mutate(type = "uw, long") |> rename(est = value)) |>
+  ggplot(aes(year, est^2, ymin = lwr^2, ymax = upr^2, color = type, fill = type)) +
+  geom_ribbon(alpha = 0.2, color = NA) +
+  coord_cartesian(ylim = c(0, 0.04)) +
   geom_line(size = 1)
 
+# divide 
+index_avg2 |> 
+  filter( year < 2020) |>
+  bind_cols(co |> filter(year > 1992) |> dplyr::select(value)) |>
+  mutate(rat = ((value - mean(value))/sd(value))-((est - mean(est))/sd(est))) |>
+  ggplot(aes(year, rat)) +
+  geom_line() + 
+  theme_light(base_size = 14)
 
+di |>
+  filter(variable == c("condition", "feeding ratio (weighted)"),
+  #filter(!variable %in% c("Herring"),
+         year > 1992) |>
+  mutate(value_z = (value - mean(value))/sd(value), .by = variable) %>% 
+  ggplot(aes(year, value_z, group = variable, color = variable)) +
+  geom_line() + 
+  theme_light(base_size = 14)
+
+
+```
+
+```{r biom weighted index per sd}
 # index by sd
 s_subdiv_index <- list()
 
-for(i in unique(nd_pred_grid_Mod$sub_div)) {
+for(i in unique(nd_pred_grid$sub_div)) {
   
-  temp_pred = nd_pred_grid_Mod |> filter(sub_div == i)
-  pred_avg_temp <- predict(Mod_s, newdata = temp_pred, return_tmb_object = TRUE)#, nsim = 10)
+  temp_pred = nd_pred_grid |> filter(sub_div == i)
+  pred_avg_temp <- predict(Mod, newdata = temp_pred, return_tmb_object = TRUE, nsim = 500)
 
-  weight_sum_temp <- temp_pred %>% # FIXME temp grid fins inte 
-  group_by(year) %>% 
+  weight_sum_temp <- temp_pred |> # FIXME temp grid fins inte 
+  group_by(year) |> 
   summarise(density_cod = sum(density_cod))
 
   index_tempo <- get_index(pred_avg_temp, area = temp_pred$density_cod) |>
@@ -712,6 +830,156 @@ plot_map_fc +
   geom_sf() +
   scale_fill_viridis() +
   ggtitle("spatiotemporal random intercept, decadal mean estimate")
+
+```
+
+# X!
+```{r}
+Mod_nX <-
+  sdmTMB(
+  data = df_tot_env,
+  formula = pred_weight ~ 1 +
+    s(pred_length_sc, year_sc) +
+    s(doy_sc, bs = "cc") +
+    depth_sc +
+    sal_sc +
+    temp_sc +
+    oxy_sc +
+    log_density_cod_sc,
+  extra_time = missing_years,
+  mesh = mesh_tot,
+  spatial = "off",
+  spatiotemporal = "off",
+  family = Gamma(link = "log")
+)
+
+sanity(Mod_nX)
+sum(is.finite(resnx))/length(resnx)
+resnx<-residuals(Mod_nX)
+qqnorm(is.finite(resnx))
+qqline(is.finite(resnx))
+
+visreg2d(Mod_nX, yvar = "pred_length_sc", xvar = "year_sc", scale=c("response"), plot.type = "gg")
+
+
+xnd_Mod <- expand.grid(pred_length_sc = seq(min(df_tot_env$pred_length_sc),
+                                             max(df_tot_env$pred_length_sc),
+                                             length.out = 30),
+                      year_sc = seq(min(df_tot_env$year_sc),
+                                      max(df_tot_env$year_sc),
+                                      length.out = length(unique(df_tot_env$year_sc))+1 )) |>
+  mutate(year = year_sc*sd(df_tot_env$year) + mean(df_tot_env$year),
+         pred_length = pred_length_sc*sd(df_tot_env$pred_length) + mean(df_tot_env$pred_length),
+         depth_sc = 0,
+         doy_sc = 0,
+         sal_sc = 0,
+         temp_sc = 0,
+         oxy_sc = 0,
+         log_density_cod_sc = 0)
+
+xpredMod <- predict(Mod_nX, newdata = xnd_Mod, type = "response", re_form = NA)
+
+xpredMod |> 
+  filter(between(pred_length, 5, 70)) |>
+  ggplot() + 
+  geom_raster(aes(year, pred_length, fill = est/pred_length)) +
+  #scale_fill_viridis() +
+  scale_x_continuous(breaks = seq(1995, 2020, by=5)) +
+  scale_y_continuous(breaks = seq(10, 60, by=10)) +
+  labs(fill = "Max. scaled fr value", linetype = "Catch length IQR", 
+       y = "Cod length", x = "Year") +
+  coord_cartesian(expand = 0)
+
+```
+
+
+# X2
+```{r}
+df_tot_env2 <- df_tot_env |>
+  mutate(pred_weight_sc = (pred_weight - mean(pred_weight))/ sd(pred_weight))
+
+Mod_nX2 <-
+  sdmTMB(
+  data = df_tot_env2,
+  formula = pred_weight ~ 1 +
+    pred_length_sc +
+    s(tot, year) +
+    s(doy_sc, bs = "cc") +
+    depth_sc +
+    sal_sc +
+    temp_sc +
+    oxy_sc +
+    log_density_cod_sc,
+  #extra_time = missing_years,
+  mesh = mesh_tot,
+  spatial = "off",
+  spatiotemporal = "off",
+  family = Gamma(link = "log")
+)
+
+Mod_nX3 <-
+  sdmTMB(
+  data = df_tot_env2,
+  formula = 
+    tot ~ 1 + pred_length_sc + s(pred_weight_sc, year) +
+    #tot ~ 1 + year + s(pred_weight_sc, pred_length_sc) +
+    s(doy_sc, bs = "cc") +
+    depth_sc +
+    sal_sc +
+    temp_sc +
+    oxy_sc +
+    log_density_cod_sc,
+  #extra_time = missing_years,
+  mesh = mesh_tot,
+  spatial = "off",
+  spatiotemporal = "off",
+  family = Gamma(link = "log")
+)
+
+sanity(Mod_nX2)
+sanity(Mod_nX3)
+
+AIC(Mod_nX2)
+AIC(Mod_nX3)
+# the model with tot explained by weight has lower AIC than weight explained by tot. Condition explaining feeding is betyter than feeding explianning condition. Makes sense. 
+
+visreg2d(Mod_nX3, yvar = "pred_weight_sc", xvar = "year_sc", scale=c("response"), plot.type = "gg")
+
+sum(is.finite(resnx))/length(resnx)
+resnx<-residuals(Mod_nX)
+qqnorm(is.finite(resnx))
+qqline(is.finite(resnx))
+
+visreg2d(Mod_nX, yvar = "pred_length_sc", xvar = "year_sc", scale=c("response"), plot.type = "gg")
+
+
+x3nd_Mod <- expand.grid(pred_weight_sc = seq(min(df_tot_env2$pred_weight_sc),
+                                             max(df_tot_env2$pred_weight_sc),
+                                             length.out = 30),
+                      year_sc = seq(min(df_tot_env2$year_sc),
+                                      max(df_tot_env2$year_sc),
+                                      length.out = length(unique(df_tot_env2$year_sc))+1 )) |>
+  mutate(year = year_sc*sd(df_tot_env2$year) + mean(df_tot_env2$year),
+         pred_weight = pred_weight_sc*sd(df_tot_env$pred_weight) + mean(df_tot_env$pred_weight),
+         depth_sc = 0,
+         doy_sc = 0,
+         sal_sc = 0,
+         temp_sc = 0,
+         oxy_sc = 0,
+         log_density_cod_sc = 0,
+         pred_length_sc = 0)
+
+x3predMod <- predict(Mod_nX3, newdata = x3nd_Mod, type = "response", re_form = NA)
+
+x3predMod |> 
+  filter(pred_weight < 10000) |>
+  ggplot() + 
+  geom_raster(aes(year, pred_weight, fill = est)) +
+  scale_fill_viridis() +
+  scale_x_continuous(breaks = seq(1995, 2020, by=5)) +
+  #scale_y_continuous(breaks = seq(10, 60, by=10)) +
+  labs(fill = "tot")
+  coord_cartesian(expand = 0)
 
 ```
 

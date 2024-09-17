@@ -17,7 +17,6 @@ execute:
   cache: false
 ---
 
-
 ## Load libraries
 
 ```{r libs}
@@ -60,10 +59,11 @@ TODO UPDATE
 ```{r read data}
 # New database data
 
-# New data (from 12 July) that contains less stomachs: StomachContent_0712474536 
+# New data (from 20 August) that contains less stomachs: StomachContent_0820100197 
+# New data from January 2024: StomachContent_0115213707
 
-fi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/File_information.csv"))
-hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInformation.csv"), 
+fi <- read_csv(paste0(home, "/data/stomach/StomachContent_0820100197/File_information.csv"))
+hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0820100197/HaulInformation.csv"), 
                col_types = list(
                  tblUploadID = col_double(),
                  tblHaulID = col_double(),
@@ -84,8 +84,9 @@ hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInforma
                  Survey = col_character(),
                  ICESDatabase = col_character(),
                  Notes =  col_character())) # the parsing issues of hi causes no problems but specifying col_types corrects the datatypes. 
-pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PredatorInformation_edit.csv")) # edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column 'Notes' at row 7139,7144 and 7296.
-prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PreyInformation.csv"))
+pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0820100197/PredatorInformation.csv")) # edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column 'Notes' at row 7139,7144 and 7296.
+#pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0820100197/PredatorInformation.csv")) # Not edited
+prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0820100197/PreyInformation.csv"))
 
 # Old database data (ODB)
 ODB <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv")) 
@@ -862,7 +863,9 @@ ggsave(paste0(home, "/figures/supp/year_diet_map.pdf"), width = 15, height = 15,
 
 ```{r}
 # Save data
-write_csv(df, paste0(home, "/data/clean/stomachs3.csv"))
+
+write_csv(df, paste0(home, "/data/clean/stomachs3.csv")) # StomachContent_0115213707
+#write_csv(df, paste0(home, "/data/clean/stomachs4.csv")) # StomachContent_0820100197 
 ```
 
 ```{r}
