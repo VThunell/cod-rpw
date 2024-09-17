@@ -72,14 +72,14 @@ df <- readRDS(paste0(home, "/data/clean/stom_env.rds")) |>
 
 glimpse(df)
 
-pred_grid <- readRDS(paste0(home, "/data/clean/pred_grid.rds"))
+#pred_grid <- readRDS(paste0(home, "/data/clean/pred_grid.rds"))
 # pred_grid <- bind_rows(readRDS(paste0(home, "/data/clean/pred_grid_(1_2).rds")),
 #                        readRDS(paste0(home, "/data/clean/pred_grid_(2_2).rds")))
 # pred_grid <- bind_rows(read_csv(paste0(home, "/data/clean/pred_grid_(1_2)_max.csv")),
 #                        read_csv(paste0(home, "/data/clean/pred_grid_(2_2)_max.csv")))
 
-plot_map +
-  geom_raster(data = pred_grid, aes(X*1000, Y*1000, fill = depth))
+#plot_map +
+ # geom_raster(data = pred_grid, aes(X*1000, Y*1000, fill = depth))
 
 ```
 
@@ -109,7 +109,7 @@ df_tot_env <- df_tot |>
 ## Long format 
 ```{r}
 df_long_env <- df_tot_env |>
-  #filter(year > 200) |>
+  #filter(year > 2018) |>
   pivot_longer(cols = starts_with("fr") & !contains("tot"),  values_to = "value", names_to = "prey_group") |>
   filter(!prey_group == "fr_other") |> # needed to avoid ln_smooth_sigma too large and also not of interest and small
   mutate(prey_group_f = as.factor(prey_group),
@@ -142,7 +142,7 @@ df_long_env |>
 # untransformed and sqrt transf not converging 
 # df_long_env <- df_long_env |>
 #   filter(between(year, 1975, 1980))
-mesh_long <- make_mesh(df_long_env, c("X", "Y"), cutoff = 5)
+mesh_long <- make_mesh(df_long_env, c("X", "Y"), cutoff = 6)
 plot(mesh_long)
 
 # missing years
@@ -186,7 +186,7 @@ Mod_2denv_iid1_nox <-
     oxy_sc,
     #density_cod_sc,
   time = "year",
-  #extra_time = missing_years,
+  extra_time = missing_years,
   spatial = "off",
   spatiotemporal = "iid",
   spatial_varying = ~ 0 + prey_group_f,
