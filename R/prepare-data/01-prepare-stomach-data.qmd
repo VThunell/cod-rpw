@@ -454,7 +454,7 @@ missing_db |> # We should have done better in the current millenium...
   mutate(decade = round(Year/10) * 10) |>
   group_by(decade, Country) |>
   count() |>
-  ungroup()
+  ungroup() 
 
 # Now I add lat/lon values from bits_hh to replace those in mm
 missing_db <- missing_db |> 
