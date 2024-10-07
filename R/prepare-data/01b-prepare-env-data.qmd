@@ -47,7 +47,7 @@ home <- here::here()
 #| message: false
 #| warning: false
 
-dat <- read_csv(paste0(home, "/data/clean/stomachs3.csv"))
+dat <- read_csv(paste0(home, "/data/clean/stomachs5.csv"))
 
 glimpse(dat)
 ```
@@ -289,6 +289,6 @@ dat_env <- dat_env_all |> dplyr::select(-yearmonth)
 # Save
 ```{r save}
 # Save data
-saveRDS(dat_env, paste0(home, "/data/clean/stom_env.rds")) # without cod densities
+saveRDS(dat_env, paste0(home, "/data/clean/stom_env_v1.rds")) # without cod densities
 #saveRDS(dat_env2, paste0(home, "/data/clean/stom_env.rds")) # with cod densities
 ```

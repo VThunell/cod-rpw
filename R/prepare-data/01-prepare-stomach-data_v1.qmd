@@ -22,7 +22,7 @@ cache: false
 ```{r libs}
 #| message: false
 
-pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "RCurl", "purrr", "janitor", "patchwork", "mapplots", "worrms", "fuzzyjoin", "rfishbase", "furrr")
+pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "RCurl", "purrr", "janitor", "patchwork", "scales", "mapplots", "worrms", "fuzzyjoin", "rfishbase", "furrr", "broom", "mgcv", "tidygam")
 
 if(length(setdiff(pkgs, rownames(installed.packages()))) > 0){
   
@@ -812,25 +812,7 @@ new_dat2 <- new_dat2 |>
   mutate(pred_length = ifelse(Country == "SE", pred_length/10, pred_length))
 
 # Remove non cod predators (e.g. Whiting 126438)
-new_dat3 <- new_dat2 |> filter(AphiaIDPredator %in% c(126436))
-
-ggplot(new_dat3, aes(pred_length, pred_weight)) + # 0, negative or NAs weight with lengths
-  geom_point()
-
-# Estimate predator weight if we have their length? get cod a and b
-# preyTaxamatch_LW |>
-#   filter(scientificname == "Gadus morhua") |>
-#   dplyr::select(a,b) |> distinct()
-
-new_data <- new_dat3 |> 
-  mutate(pred_weight = replace_na(pred_weight, 0),
-         pred_weight_source = ifelse(pred_weight <= 0, "estimated", "observed"),
-         pred_weight = ifelse(pred_weight_source == "estimated", 0.00712575*pred_length^3.098685, pred_weight))		
-
-new_data |> 
-  arrange(desc(pred_weight_source)) |>
-  ggplot(aes(pred_length, pred_weight, col = pred_weight_source)) +
-  geom_point(shape = 4)
+new_data <- new_dat2 |> filter(AphiaIDPredator %in% c(126436))
 
 ```
 
@@ -1049,7 +1031,7 @@ missing_db9 <- missing_db9[-dup,]
 
 ```
 
-## Sum prey per predatror
+## Sum prey per predator
 ```{r prey classes}
 # remove zero weight predators and prey that are to no use, then make predator identifier. Remove NA prey weights
 missing_db10 <- missing_db9 |>
@@ -1090,36 +1072,13 @@ missing_db10_sum4 <- missing_db10_sum3 |>
   mutate(other = replace_na(other,0),
          other_inverts = replace_na(other_inverts,0),
          other_chords = replace_na(other_chords,0))
-```
-
-# Fix predator weights from lengths
-```{r}
-# Estimate predator weight if we have their length? get cod a and b
-# preyTaxamatch_LW |>
-#   filter(scientificname == "Gadus morhua") |>
-#   dplyr::select(a,b) |> distinct()
-
-# fix predator lengths and weights. Esitmate weight when length exists
-missing_db10_sum5 <- missing_db10_sum4 |> 
-  mutate(pred_weight_source = if_else(is.na(pred_weight) | pred_weight <= 0, "estimated", "observed"),
-         pred_weight = if_else(pred_weight_source == "estimated", 0.00712575*pred_length^3.098685, pred_weight, missing = NA)) 
-
-missing_db10_sum5 |> 
-  arrange(desc(pred_weight_source)) |>
-  ggplot(aes(pred_length, pred_weight, col = pred_weight_source)) +
-  geom_point(shape = 4)
-
-missing_db10_sum5 |>
-  summarise(n=n(), .by = pred_weight_source)
-# TODO consider using baltic specific a and b. interseting that the new and old db differs in the lw-relationship.
 
 ```
-
 
 ```{r prey classes}
 #colnames(missing_db12_sum) #select columns without prey info .
-old_data <- missing_db10_sum5 |> 
-  dplyr::select(Country,Estimated_Lat_Lon,ICESrectangle,Year,Month,Day,pred_weight,pred_length,Haul_ID,lat,lon,pred_ID,other_inverts,other_chords,other,herring,sprat,saduria,pred_weight_source,Depth)
+old_data <- missing_db10_sum4 |> 
+  dplyr::select(Country,Estimated_Lat_Lon,ICESrectangle,Year,Month,Day,pred_weight,pred_length,Haul_ID,lat,lon,pred_ID,other_inverts,other_chords,other,herring,sprat,saduria,Depth)
 
 old_data |> # there are unlikely extremes. These are filtered on feeding ratio in the analysis.
   rowwise() |>
@@ -1221,7 +1180,6 @@ new_SE_data <- SE4_sum3 |>
          Depth = bottom_depth,
          ICESrectangle = ices_rect) |>
   mutate(Country = "SE",
-         pred_weight_source = "observed",
          data_source = "new_SE",
          Day = day(date),
          Month = month)
@@ -1253,11 +1211,123 @@ all_data <- full_join( old_db_data |> dplyr::select(-c(Depth)), # join in predat
 
 ```
 
-Now calculate feeding ratios of cod. 
+# Estimate weight of predators from length using yearly a:s and b:s
+The size of the cod in both the new db and old db are mainly represented by lengh and the length-weight relationship in eastern baltic cod has varied over time. This will likely affect our feeding ratio estimates and we want to account for this by estimate a yearly a and b using combined data from BITS (1978-) and the stomach data (1963-). 
+
+```{r}
+# Model a yearly LW-relationship as a linear model of log(weight) ~ log(length). And then fit gam with a a smooth of year to smooth out the variation in a and b over time. 
+
+# identify data to use for estimating in the stomach data 
+all_data2 <- all_data |> 
+  mutate(pred_weight = replace_na(pred_weight, 0),
+         pred_weight_source = ifelse(pred_weight <= 0, "estimated", "observed"))
+
+# 67% of obs contains only length
+all_data2 |> 
+  summarise(percobs = n() / nrow(all_data2) * 100, .by = pred_weight_source)
+
+# load BITS data (parsing issues because sd is not double)
+# problems(read_csv(paste0(home, "/data/clean/lw_data.csv")))
+lw_data_bits <- read_csv(paste0(home, "/data/clean/lw_data.csv"), 
+                         col_types = list(
+                           Year = col_double(),
+                           SD = col_character(),
+                           LngtCm  = col_double(),
+                           IndWgt = col_double(),
+                           lon  = col_double(),
+                           lat  = col_double(),
+                           species = col_character()))
+
+# combine bits with stomach data on lw
+lw_data_stombits <- lw_data_bits |>
+  filter(species == "cod") |>
+  dplyr::select(Year,LngtCm,IndWgt) |>
+  rename(pred_length = LngtCm,
+         pred_weight = IndWgt) |>
+  bind_rows( all_data2 |> filter(pred_weight_source == "observed") |> dplyr::select(Year, pred_weight, pred_length))
+
+# fit yearly lm models
+ebc_yearly_lw <- lw_data_stombits |>
+  group_by(Year) |>
+  group_modify( ~ tidy(lm(data = .x, log(pred_weight) ~ log(pred_length)))) |>
+  pivot_wider(id_cols=Year, names_from = term, values_from = estimate ) |>
+  rename(a = '(Intercept)',
+         b = 'log(pred_length)') |>
+  mutate(a = exp(a),
+         b = b)
+
+# plot a and b over time
+ebc_yearly_lw |>
+  filter(a < 1) |>
+  pivot_longer(cols = c(a,b), names_to = "coeff", values_to = "value") |>
+  ggplot(aes(Year, value, color = coeff)) +
+  geom_point() +
+  facet_wrap(~coeff, scales = "free") +
+  stat_smooth(method = "gam", formula = y ~ s(x, k=3)) +
+  expand_limits(x=c(1960,2020))
+
+# fit a gam for a and b to get smoothed predictions of a and b.
+agam <- gam(a ~ s(Year),
+            data = ebc_yearly_lw,
+            family = gaussian())
+
+bgam <- gam(b ~ s(Year),
+            data = ebc_yearly_lw,
+            family = gaussian())
+#predict
+apred <- predict_gam(agam, length_out = length(unique(ebc_yearly_lw$Year))) |>
+  mutate(Year=round(Year))
+
+bpred <- predict_gam(bgam, length_out = length(unique(ebc_yearly_lw$Year))) |>
+  mutate(Year=round(Year))
+
+# combine to plot
+abpred <- bind_rows(apred |> rename(est=a) |> mutate(coeff= "a"), bpred |> rename(est=b) |> mutate(coeff= "b"))
+
+abpred |>
+  ggplot() +
+  geom_line(aes(Year, est, color = coeff)) +
+  geom_point(data = ebc_yearly_lw |>  filter(a < 1) |>
+               pivot_longer(cols = c(a,b), names_to = "coeff", values_to = "value"), aes(Year, value, color= coeff)) +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci, x=Year), color = NA, alpha = 0.3) +
+  facet_wrap(~coeff, scales = "free") +
+  expand_limits(x=c(1960,2020))
+
+# join in a and b
+all_data3 <- all_data2 |>
+  left_join(apred, join_by(Year)) |>
+  left_join(bpred, join_by(Year)) 
+
+# test the effect of using yearly a and bs insetad of mean general cods from fishbase 
+length_decade_ab <- expand.grid(length = 10:50, decade=seq(1960,2020, by=10)) |>
+  left_join(apred |> mutate(decade = round(Year/10) * 10) |> ungroup() |> summarise(meana = mean(a), .by= c(decade))) |>
+  left_join(bpred |> mutate(decade = round(Year/10) * 10) |> ungroup() |> summarise(meanb = mean(b), .by= c(decade))) |>
+  mutate(tvar_ab = meana*length^meanb,
+         fb_ab = 0.00712575*length^3.098685)
+# plot
+length_decade_ab |>
+  ggplot(aes(length, tvar_ab, color = factor(decade))) +
+  geom_line() +
+  geom_line(aes(length, fb_ab), color = "black", linetype = "dashed", ) +
+  scale_color_viridis_d()
+
+# estimate weight based on year a and b and on fishbase a and b for comparison. 
+all_data4 <- all_data3 |>
+  mutate(pred_weight_source = ifelse(pred_weight <= 0, "estimated", "observed"),
+         pred_weight = ifelse(pred_weight_source == "estimated", a*pred_length^b, pred_weight),
+         pred_weight_fb = ifelse(pred_weight_source == "estimated", 0.00712575*pred_length^3.098685, pred_weight)) # mean cod fishbase a and b
+
+# make this a nicer plot, generate some data and 
+all_data4 |>
+  arrange(desc(pred_weight_source)) |>
+  ggplot(aes(pred_length, pred_weight, color = pred_weight_source)) +
+  geom_point(shape = 4) 
+```
+
 
 ```{r}
 # Calculate feeding ratios and remove values above 1
-all_data2 <- all_data |> 
+all_data5 <- all_data4 |> 
   rowwise() |> 
   mutate(fr_sad = saduria / pred_weight,
          fr_spr = sprat / pred_weight,
@@ -1265,11 +1335,11 @@ all_data2 <- all_data |>
          fr_other = other / pred_weight,
          fr_other_inverts = other_inverts / pred_weight,
          fr_other_chords = other_chords / pred_weight,
-         fr_tot = sum(other, other_inverts, other_chords, saduria, sprat, herring) / pred_weight) |>
-  filter(between(fr_tot, 0, 1 )) |>
-  ungroup()
+         fr_tot = sum(other, other_inverts, other_chords, saduria, sprat, herring) / pred_weight,
+         fr_tot_fb = sum(other, other_inverts, other_chords, saduria, sprat, herring) / pred_weight_fb) |>
+  filter(between(fr_tot, 0, 1 )) |> ungroup()
 
-all_data2 |>  # log so we can see the data better
+all_data5 |>  # log so we can see the data better
   dplyr::select(fr_sad, fr_spr, fr_her, fr_tot, fr_other, fr_other_chords, fr_other_inverts) |> 
   #dplyr::select(fr_tot) |> 
   pivot_longer(everything()) |> 
@@ -1282,7 +1352,7 @@ all_data2 |>  # log so we can see the data better
 Check the proportion of stomachs without these prey
 
 ```{r}
-all_data2 |> 
+all_data5 |> 
   pivot_longer(c("herring", "saduria", "sprat","other", "other_inverts", "other_chords")) |> 
   summarise(prop_empty = sum(value == 0)/n(), 
             prop_not_empty = sum(value != 0)/n(), .by = name)
@@ -1293,20 +1363,20 @@ Seems like fairly high proportions of cod without these key species in stomachs,
 #| out-width: 100%
 
 # add day of the year. When Day is missing (622 rows), I assume that day is 15, ie.e mid month, to not loose data for the sake of a not very important variable.
-all_data2 <- all_data2 |> 
+all_data6 <- all_data5 |> 
   mutate(day_of_year = if_else(!is.na(Day), 
                                yday(as.Date(paste(Year, Month, Day, sep = "-"))),
                                yday(as.Date(paste(Year, Month, 15, sep = "-")))))
 
 # Fix some columns and select
-df <- all_data2 |> 
+df <- all_data6 |> 
   dplyr::select(!month) |> #remove errornous month
   rename(ices_rect = ICESrectangle,
          year = Year,
          month = Month,
          day = Day) |> 
   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
-  dplyr::select(pred_ID, herring, saduria, sprat, other, other_inverts, other_chords, fr_tot, fr_sad, fr_spr, fr_her, fr_other, fr_other_inverts, fr_other_chords, year, month, day, day_of_year, pred_weight, pred_length, pred_weight_source, lat, lon, ices_rect, X, Y, data_source, Country, Depth)
+  dplyr::select(pred_ID, herring, saduria, sprat, other, other_inverts, other_chords, fr_tot, fr_sad, fr_spr, fr_her, fr_other, fr_other_inverts, fr_other_chords, year, month, day, day_of_year, pred_weight, pred_weight_fb, pred_length, pred_weight_source, lat, lon, ices_rect, X, Y, data_source, Country, Depth)
 
 # Add sample size per coordinate for plotting
 df_plot <- df |>
