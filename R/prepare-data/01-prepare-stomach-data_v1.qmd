@@ -12,9 +12,11 @@ knitr:
 editor: source
 execute: 
   echo: true
-eval: true
-cache: false
+  eval: true
+  cache: false
 ---
+
+## Introduction 
 
 This script prepares stomach content data from three sources: 1) the [ICES stomach content database](https://stomachdata.ices.dk) with data from the Baltic Sea, 2) a copy the previous version of the ICES stomach content database and 3) recent Swedish observations not yet uploaded to the ICES database. 
 
@@ -27,7 +29,8 @@ The stomach content database for the Baltic sea (all countries, year 1963-2021) 
 ```{r libs}
 #| message: false
 
-pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "RCurl", "purrr", "janitor", "patchwork", "scales", "mapplots", "worrms", "fuzzyjoin", "rfishbase", "furrr", "broom", "mgcv", "tidygam")
+pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "RCurl", "purrr", "janitor", "patchwork", "scales", "mapplots", "worrms", "fuzzyjoin", "rfishbase", "furrr", "broom", "mgcv", "tidygam", "terra", "rnaturalearth","rnaturalearthdata")
+
 
 if(length(setdiff(pkgs, rownames(installed.packages()))) > 0){
   
@@ -98,7 +101,7 @@ SE <- read_csv(paste0(home, "/data/stomach/full_stomach_data_x.csv")) # From Max
 # BITS survey data to improve coordinates in ODB
 # bits_hh <- getDATRAS(record = "HH", survey = "BITS", years = 1963:2022, quarters = c(1,2,3,4))
 # write_csv(bits_hh, paste0(home, "/data/DATRAS_exchange/bits_hh.csv"))
-bits_hh <- read_csv(paste0(home, "/data/DATRAS_exchange/bits_hh.csv"))
+bits_hh <- read_csv(paste0(home, "/data/survey/DATRAS_exchange/bits_hh.csv"))
 
 # North sea length-weight coefficients
 # a and bs for benthic species in the North sea: https://doi.org/10.1017/S0025315409991408
@@ -654,8 +657,6 @@ new_db3 |> # some unreasonable weights but not too much
   geom_histogram() +
   facet_wrap(~abTaxlevel, scales = "free")
 
-new_db3 |> filter(prey_weight <= 0 & !is.na(AphiaIDPrey)) |> dplyr::select(AphiaIDPrey, prey_weight, prey_length, Count)
-
 # # Even if we estimate the prey weight based on the length of the prey and the number of the prey, we still have 151 rows that Weight == -9 or 0. We can give them the average weight but: While this may produce outliers when the predator is small compared to the avg prey size, these would be removed in a later cleaning stage. Lets gove them average weights.
 
 new_db3 |> # Of course there are extreme weights that should not be included, these will be removed when we filter out unreasonable rpw:s (>1).
@@ -671,7 +672,8 @@ new_db3 |> # 893 g sprat not possible
 new_db3 |> # Saduria above 10 g is highly unlikely
   filter(AphiaIDPrey %in% c(293511, 119034),
          prey_ind_weight > 10) |> as.data.frame() |>
-  arrange(prey_ind_weight)
+  arrange(prey_ind_weight) |> 
+  slice(1:20)
 # Saduria has a mean weight of 1 g. max weight of 7,8 or 9. The count may be off etc. If analysing saduria individuals level, we need to revisit these values (https://doi.org/10.1111/j.0021-8790.2004.00800.x and https://www.jstor.org/stable/24831823 ). Not that outliers likely disappear when I filter on relative prey weight (<1).
 
 # To control for outliers affecting average of individual weight, remove values outside quartiles
@@ -701,7 +703,7 @@ new_db4 <- new_db4 |>
 
 ```
 
-### Summarise prey weights by predator and prey group. 
+### Summarise prey weights by predator and prey group
 
 ```{r summarise prey by group NDB}
 # Make prey groups based on taxonomy. Groups: herring, sprat, saduria, chordata, invertebrates, other 
@@ -1008,7 +1010,7 @@ missing_db7 <- missing_db6 |>
                                          prey_weight_source == "estimated" ~ (0.01*prey_length^3)*prey_count,
                                          .default = prey_weight),
                                case_when(prey_weight_source == "estimated_zerocount" ~ (a*prey_length^b)*1,
-                                          prey_weight_source == "estimated" ~ (a*prey_length^b)*prey_count,
+                                         prey_weight_source == "estimated" ~ (a*prey_length^b)*prey_count,
                                          .default = prey_weight)),
          prey_weight_ind = if_else(prey_count > 0 & prey_weight > 0, prey_weight / prey_count, NA))
 
@@ -1024,6 +1026,14 @@ prey_avg_ind_weight_odb <- missing_db7 |> #prey_avg_ind_weight_odb |>
   filter(!prey_weight_ind %in% boxplot.stats(prey_weight_ind)$out, .by = Prey_AphiaID) |>
   reframe(avg_weight = mean(prey_weight_ind, na.rm = TRUE), .by = Prey_AphiaID)
 
+# NaNs are produced despite na.rm=TRUE and nas in Prey_AphiaID are removed
+prey_avg_ind_weight_odb |> 
+  filter(is.na(avg_weight))
+
+#set the NaNs to 0
+prey_avg_ind_weight_odb <- prey_avg_ind_weight_odb |> 
+  mutate(avg_weight = replace_na(avg_weight, 0))
+
 # Join average weight and estimate weight
 missing_db8 <- missing_db7 |> 
   left_join(prey_avg_ind_weight_odb) |> 
@@ -1033,11 +1043,11 @@ missing_db8 |>  # 69 621 zeros out of which many come from NAs
   filter(prey_weight == 0)
 
 ```
-### Make prey groups 
+### Make prey groups ODB
 
 ```{r prey groups ODB}
 
-# Make prey classes
+# Make prey groups 
 missing_db9 <- missing_db8 |> # arguments are evaluated in order so proceed from specific to general
   mutate(prey_group = case_when(valid_name == "Clupea harengus"~ "herring",
                                 valid_name == "Sprattus sprattus"~ "sprat",
@@ -1102,9 +1112,11 @@ missing_db10_sum3 <- missing_db10_sum2 |>
   dplyr::select(-unidd_clupeids)
 
 # identify if theres is na in the prey group columns
-missing_db10_sum3 |> # no ther isnt
-  map(\(.) sum(is.na(.)))
+missing_db10_sum3 |> # no there isnt
+  map(\(.) sum(is.na(.))) 
 
+missing_db10_sum3 |> 
+  filter(is.na(other_chords)) 
 # replace na with 0
 missing_db10_sum4 <- missing_db10_sum3 |>
   mutate(other = replace_na(other,0),
@@ -1267,8 +1279,8 @@ all_data2 |>
   summarise(percobs = n() / nrow(all_data2) * 100, .by = pred_weight_source)
 
 # load BITS data (parsing issues because sd is not double)
-# problems(read_csv(paste0(home, "/data/clean/lw_data.csv")))
-lw_data_bits <- read_csv(paste0(home, "/data/clean/lw_data.csv"), 
+# problems(read_csv(paste0(home, "/data/survey/lw_data.csv")))
+lw_data_bits <- read_csv(paste0(home, "/data/survey/lw_data.csv"), 
                          col_types = list(
                            Year = col_double(),
                            SD = col_character(),
@@ -1414,18 +1426,61 @@ all_data5 |>
 ```
 Seems like fairly high proportions of cod without these key species in stomachs, but at least ~half have other prey in their stomachs
 
-## 9. Last fixes, spatiotemporal distribution and save data
+## 9. Remove points on land and outside Baltic
+
+```{r}
+# Inspired by code from the map-plot function (in ...R/functions) but using terra instead of sf
+# Specify map ranges
+ymin = 52; ymax = 60.5; xmin = 13; xmax = 24
+
+map_data <- rnaturalearth::ne_countries(
+  scale = "medium",
+  returnclass = "sv", continent = "europe")
+
+# Crop the polygon for plotting and efficiency:
+# st_bbox(map_data) # find the rough coordinates
+swe_coast <- suppressWarnings(suppressMessages(
+  terra::crop(map_data,
+          c(xmin = xmin, ymin = ymin, xmax = xmax, ymax = ymax))))
+
+# Change projection of the polygons and make SpatVector of the points
+swe_coast_proj <- project(swe_coast, "epsg:32633") # utm_zone33
+dat_vect <- vect(all_data5, geom=c("lon", "lat"))
+
+# which points intesect with the land polygons
+onland <- is.related(dat_vect, swe_coast, "intersects")
+
+# seems correct
+plot_map_fc +
+  geom_point(data = all_data5[onland,] |> add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633), aes(X*1000, Y*1000), color="red") +
+  theme_sleek(base_size = 6)
+
+# remove the point on land
+all_data6 <- all_data5[!onland,]
+
+#remove points outside the Baltic, i.e. the western most points in:
+all_data6 |>
+  ggplot(aes(lon, lat)) + 
+  geom_point() + 
+  geom_vline(xintercept = 13) +
+  coord_sf()
+
+all_data6 <- all_data6 |>
+  filter( lon > 13)
+```
+
+## 10. Last fixes, spatiotemporal distribution and save data
 ```{r last fixes all data}
 #| out-width: 100%
 
 # add day of the year. When Day is missing (622 rows), I assume that day is 15, ie.e mid month, to not loose data for the sake of a not very important variable.
-all_data6 <- all_data5 |> 
+all_data7 <- all_data6 |> 
   mutate(day_of_year = if_else(!is.na(Day), 
                                yday(as.Date(paste(Year, Month, Day, sep = "-"))),
                                yday(as.Date(paste(Year, Month, 15, sep = "-")))))
 
 # Fix some columns and select
-df <- all_data6 |> 
+df <- all_data7 |> 
   dplyr::select(!month) |> #remove errornous month
   rename(ices_rect = ICESrectangle,
          year = Year,
@@ -1458,6 +1513,6 @@ ggsave(paste0(home, "/figures/supp/year_diet_map.pdf"), width = 15, height = 15,
 ```{r Save}
 # Save data
 
-write_csv(df, paste0(home, "/data/clean/stomachs5.csv")) # StomachContent_0115213707
-#write_csv(df, paste0(home, "/data/clean/stomachs4.csv")) # StomachContent_0820100197 
+write_csv(df, paste0(home, "/data/stomach/stomachs_v1.csv")) # StomachContent_0115213707
+#write_csv(df, paste0(home, "/data/stomach/stomachs_v1.csv")) # StomachContent_0820100197 
 ```

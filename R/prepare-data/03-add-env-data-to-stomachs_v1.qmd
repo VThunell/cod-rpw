@@ -1,0 +1,297 @@
+---
+title: "Add environmental data to stomach data"
+author: "Max Lindmark & Viktor Thunell"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: 
+  html:
+    embed-resources: true
+    fig-width: 8
+    #fig-asp: 0.618
+knitr: 
+  opts_chunk:
+    fig.align: center
+editor: source
+execute: 
+  echo: true
+  eval: true
+  cache: false
+---
+
+This script add enviromental information (depth and bottom oxygen, temperature and salinity) to the stomach content data prepared in 01-prepare-stomach-data_v1.
+
+  * Depth is extracted from a file dowladed from EMODnet Bathymetry project (https:// emodnet.ec.europa.eu/en/bathymetry) 
+  * Bottom oxygen, temperature and salinity is from spatiotemporal simulated data available from the [Copernicus](https://data.marine.copernicus.eu/products) and the Swedish Meteorological and Hydrological Institute (SMHI). 
+  * From Copernicus, we use the Baltic sea reanalysis (for years 1993-2021) and the analysis and forecast (for 2022-2023) of [Nemo](https://nemo-ocean.eu) for salinity and temperature and the biogeochemical model [ERGOM](https://ergom.net/).
+  * From SMHI we used hindcast simulations (1961-2017) of the NEMO–SCOBI model (NEMO-Nordic coupled to the Swedish Coastal and Ocean Biogeochemical model SCOBI, https://doi.org/10.5194/bg-2023-116).
+
+See exact references below
+
+## Load libraries
+
+```{r lib}
+#| message: false
+
+pkgs <- c("tidyverse", "tidylog", "sp", "raster", "devtools", "RCurl", "sdmTMB", "purrr", "terra", "ncdf4", "chron", "ncdf4", "tidyterra") 
+
+if(length(setdiff(pkgs, rownames(installed.packages()))) > 0){
+
+    install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
+  
+}
+
+invisible(lapply(pkgs, library, character.only = T))
+
+# Source code for map plots
+devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
+
+# Set path
+home <- here::here()
+```
+
+## Read data
+
+```{r}
+#| message: false
+#| warning: false
+
+dat <- read_csv(paste0(home, "/data/stomach/stomachs_v1.csv"))
+
+glimpse(dat)
+```
+
+# irst 
+```{r}
+#remove points outside the baltic, i.e. the western most points in:
+dat |>
+  ggplot(aes(lon, lat)) + 
+  geom_point() + 
+  geom_vline(xintercept = 13) +
+  coord_sf()
+
+dat <- dat |>
+  filter( lon > 13)
+
+```
+
+# Add depth
+
+```{r}
+# load depth raster downloaded from https://emodnet.ec.europa.eu/geoviewer/
+dep_raster <- terra::rast(paste0(home, "/data/environment/Mean depth natural colour (with land).nc"))
+class(dep_raster)
+crs(dep_raster, proj = TRUE)
+
+plot(dep_raster)
+
+# extract depth from raster
+dat$depth <- terra::extract(dep_raster, dat |> dplyr::select(lon, lat))$elevation
+
+ggplot(dat, aes(lon, lat, color = depth*-1)) + 
+  geom_point()
+
+# make depth from elevation
+dat$depth <- dat$depth*-1
+
+hist(dat$depth)
+
+plot_map_fc +
+  geom_point(data = dat, aes(X*1000, Y*1000, color = depth), alpha = 0.5) +
+  theme_sleek(base_size = 6) + 
+  geom_sf()
+
+```
+
+## Add oxy, temp, and sal from SMHI hindcast (and models of Copernicus and hindcast)
+
+```{r}
+# read Hindcast data
+hindenv_df <- readRDS(file = paste0(home, "/data/environment/hindcast_1961_2017.rds")) |>
+  filter(year > 1962) |>
+  mutate(yearmonth = (year-1963)*12+month)
+
+dat <- dat |> mutate(yearmonth = (year-1963)*12+month)
+
+# for the following values we need to model the hindcast
+lateobs_my <- dat |> filter(year > 2017) |> distinct(yearmonth) 
+
+# make a pred grid for those late observations
+lateobs_predhind <- hindenv_df |>
+  distinct(lat, lon) |>
+  replicate_df(time_name = "yearmonth", time_values = pull(lateobs_my)) |>
+  mutate( model = as_factor("hindcast"),
+          year = floor(1963+(yearmonth/12)),
+          month = yearmonth %% 12) |> # mod, i.e. the remainder of an integer divide (here month)
+  add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633)
+
+# Predict using the models for oxy, sal and temp. For reference see 1c_combine_oxysaltemp_data.qmd
+
+# load model for oxygen
+Mod_oxy <- readRDS(paste0(home, "/R/prepare-data/Mod_oxy.rds"))
+# load model for salinity
+Mod_sal <- readRDS(paste0(home, "/R/prepare-data/Mod_sal.rds"))
+# load model for temperature
+Mod_temp <- readRDS(paste0(home, "/R/prepare-data/Mod_temp.rds"))
+
+oxypreds <- predict(Mod_oxy, newdata = lateobs_predhind) |> mutate(oxy = est) |> dplyr::select(lat, lon, year, month, yearmonth, oxy)
+salpreds <- predict(Mod_sal, newdata = lateobs_predhind) |> mutate(sal = est) |> dplyr::select(lat, lon, year, month, yearmonth, sal)
+temppreds <- predict(Mod_temp, newdata = lateobs_predhind) |> mutate(temp = est) |> dplyr::select(lat, lon, year, month, yearmonth, temp)
+
+# Combine hindccast preds for 2018-2023 with hindcast (1963-2017)
+hindcast_allyears <- left_join(salpreds, oxypreds) |> left_join(temppreds) |> 
+  bind_rows(hindenv_df |> dplyr::select(temp, sal, oxy, lat, lon, year, month, yearmonth))
+
+map(hindcast_allyears, ~sum(is.na(.))) # No NAs
+hindcast_allyears |> # for >2018 we only have the months that we need for the observations in dat
+  summarise(nobs = n(), .by = c(month, year)) |>
+  arrange(year)
+          
+hindcast_allyears |>
+  summarise(mean_oxy = mean(oxy), .by = c(year, month)) |>
+  filter(month %in% c(2,3,11)) |>
+  ggplot() +
+  geom_line(aes(year, mean_oxy, color = factor(month)), linetype = "dashed") +
+  geom_line(data = hindenv_df |> filter(month %in% c(2,3,11)) |> summarise(oxy = mean(oxy), .by = c(year, month)), aes(x = year, y = oxy, color = factor(month)))
+
+hindcast_allyears |>
+  summarise(mean_temp = mean(temp), .by = c(year, month)) |>
+  filter(month %in% c(2,3,11)) |>
+  ggplot() +
+  geom_line(aes(year, mean_temp, color = factor(month)), linetype = "dashed") +
+  geom_line(data = hindenv_df |> filter(month %in% c(2,3,11)) |> summarise(temp = mean(temp), .by = c(year, month)), aes(x = year, y = temp, color = factor(month)))
+
+# Now use terra::extract to get oxy, sal and temp values to dat
+
+# function for extraction based on yearmonth
+ext_envdat <- function(ayearmonth)  {
+
+  ext_y = dat |> filter(yearmonth == ayearmonth)  |> dplyr::select(lon, lat) # coords from the stomach data, can only be lon and lat for extract()
+  
+  hindcast_allyears |>
+    filter(yearmonth == ayearmonth) |>
+    as_spatraster(xycols = c(2,1), crs = "WGS84", digits = 2) |>
+    terra::extract(ext_y, method = "bilinear", ID=FALSE) |> # to reduce NaNs produced when points are outside raster extent (i.e. on land) 
+    dplyr::select(oxy, sal, temp) |>
+    bind_cols(dat |> filter(yearmonth == ayearmonth))
+    
+}
+
+dat <- dat |>
+  mutate(yearmonth = (year-1963)*12+month)
+
+# use the ext_envdat function to extract env covs values to the observations fr hindcast
+dat_env <- unique(dat |> pull(yearmonth)) |> 
+  map(\(x) ext_envdat(x)) |>
+  list_rbind()
+
+# Many observations lie just outside the hincast_allyears raster extent causing NA values
+theNAs <- dat_env |> filter(is.na(oxy) | is.na(sal) | is.na(temp))
+theNAs |> summarise(n = n(), .by= year) |> arrange(year)
+
+# filter out those observations from the data using pred_ID
+dat_na <- dat |> 
+  filter(pred_ID %in% theNAs$pred_ID)
+
+# a function to find the closest point with env covs in the env_dat
+cov_na_fill <- function(napred_id)  {
+
+  pid_lly = dat_na |> 
+    filter(pred_ID == napred_id) |> dplyr::select(lon, lat, yearmonth) 
+
+  pl = distance(pid_lly |> dplyr::select(lon, lat),
+           hindcast_allyears |> filter(yearmonth == pid_lly$yearmonth) |> dplyr::select(lon,lat),
+           lonlat = TRUE)
+  
+  dat_na |> 
+    filter(pred_ID == napred_id) |> 
+    bind_cols(hindcast_allyears[which.min(pl),] |> dplyr::select(oxy,temp,sal) )
+
+}
+
+# apply function to dat_na
+dat_na_filled <- dat_na$pred_ID |>
+map(\(x) cov_na_fill(x)) |>
+  list_rbind() 
+# no NAs left
+dat_na_filled  |> filter(is.na(oxy) | is.na(sal) | is.na(temp))
+
+# bind the non-NA observations with the NAs 
+dat_env_all <- dat_env |> 
+  filter(!is.na(oxy) | !is.na(sal) | !is.na(temp)) |>
+  bind_rows(dat_na_filled)
+# all are there?(!)
+dat_env_all |> summarise(n()) == dat |> summarise(n())
+sum(is.na(dat_env_all$oxy))
+
+# check plots
+plot_map_fc +
+  geom_point(data = dat_env_all, aes(X*1000, Y*1000, color = oxy), alpha = 0.5) +
+  theme_sleek(base_size = 6) + 
+  geom_sf() 
+  
+plot_map_fc +
+  geom_point(data = dat_env_all, aes(X*1000, Y*1000, color = temp), alpha = 0.5) +
+  theme_sleek(base_size = 6) + 
+  geom_sf() 
+
+plot_map_fc +
+  geom_point(data = dat_env_all, aes(X*1000, Y*1000, color = sal), alpha = 0.5) +
+  theme_sleek(base_size = 6) + 
+  geom_sf() 
+
+dat_env <- dat_env_all |> dplyr::select(-yearmonth)
+```
+
+
+## Add cod densities, only for post 1992!
+
+```{r cod density covariate}
+
+# for the Mod, the fr data is instead used to scale the prediction grid
+# data_stats <- read_csv(paste0(home, "/data/survey/data_stats.csv")) 
+# m3 <- readRDS(paste0(home, file = "/R/main-analysis/m3.rds"))
+# hist(m3$data$density)
+# # d_stats is used to scale the prediction grid when predicting cod densities
+# data_stats_st <- data_stats |>
+#   summarise(depth_mean = mean(depth, na.omit = TRUE),
+#             depth_sd = sd(depth),
+#             sal_mean = mean(sal, na.omit = TRUE),
+#             sal_sd = sd(sal),
+#             oxy_mean = mean(oxy, na.omit = TRUE),
+#             oxy_sd = sd(oxy),
+#             temp_mean = mean(temp, na.omit = TRUE),
+#             temp_sd = sd(temp))
+# 
+# 
+# df_m3 <- dat_env |>
+#   filter(between(year, 1993, 2021)) |>
+#   drop_na(oxy,
+#           sal,
+#           temp) |>
+#   mutate(depth = ifelse(depth < 0, 0, depth),
+#          depth_sc = (depth - data_stats_st$depth_mean)/data_stats_st$depth_sd,
+#          oxy_sc = (oxy - data_stats_st$oxy_mean)/data_stats_st$oxy_sd,
+#          sal_sc = (sal - data_stats_st$sal_mean)/data_stats_st$sal_sd,
+#          temp_sc = (temp - data_stats_st$temp_mean)/data_stats_st$temp_sd,
+#          depth_sq = depth_sc^2,
+#          temp_sq = temp_sc^2,
+#          year_f = as.factor(year),
+#          quarter_f = as.factor(1))
+# 
+# # Predict cod cpue density with model model from Max  
+# cpue_cod <- predict(m3, newdata = df_m3) |>
+#   mutate(log_density_cod = est) |> # on the log scale Max and Sean says!
+#   dplyr::select(lat, lon, log_density_cod) |>
+#   distinct()
+# 
+# dat_env2 <- dat_env |>
+#   left_join(cpue_cod) # multiple = "any"?? 
+# 
+# hist(exp(dat_env2$log_density_cod))
+```
+
+# Save
+```{r save}
+# Save data
+saveRDS(dat_env, paste0(home, "/data/stomach/stom_env_v1.rds")) # without cod densities
+#saveRDS(dat_env2, paste0(home, "/data/stomach/stom_env.rds")) # with cod densities
+```
