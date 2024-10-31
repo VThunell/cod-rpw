@@ -36,7 +36,7 @@ pkgs <- c("tidyverse", "tidylog", "sp", "raster", "devtools", "RCurl", "sdmTMB",
 if(length(setdiff(pkgs, rownames(installed.packages()))) > 0){
 
     install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
-  
+ 
 }
 
 invisible(lapply(pkgs, library, character.only = T))
@@ -59,23 +59,9 @@ dat <- read_csv(paste0(home, "/data/stomach/stomachs_v1.csv"))
 glimpse(dat)
 ```
 
-# irst 
-```{r}
-#remove points outside the baltic, i.e. the western most points in:
-dat |>
-  ggplot(aes(lon, lat)) + 
-  geom_point() + 
-  geom_vline(xintercept = 13) +
-  coord_sf()
-
-dat <- dat |>
-  filter( lon > 13)
-
-```
-
 # Add depth
 
-```{r}
+```{r add depth}
 # load depth raster downloaded from https://emodnet.ec.europa.eu/geoviewer/
 dep_raster <- terra::rast(paste0(home, "/data/environment/Mean depth natural colour (with land).nc"))
 class(dep_raster)
@@ -103,7 +89,7 @@ plot_map_fc +
 
 ## Add oxy, temp, and sal from SMHI hindcast (and models of Copernicus and hindcast)
 
-```{r}
+```{r add oxysaltemp}
 # read Hindcast data
 hindenv_df <- readRDS(file = paste0(home, "/data/environment/hindcast_1961_2017.rds")) |>
   filter(year > 1962) |>

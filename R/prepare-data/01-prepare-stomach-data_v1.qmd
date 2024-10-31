@@ -22,7 +22,7 @@ This script prepares stomach content data from three sources: 1) the [ICES stoma
 
 The output df contains one row per unique predator, their total and prey gruoup specific relative prey weight (rpw) along with necessary information used in analysis (coorinates, time etc.). To get there, in short, we summarise prey information per predator individual an combine the datasets. Furthermore, we add taxonomy (from  the World register of marine species, [Worms](https://www.marinespecies.org/)) and taxonomic rank specific length-weight relationships (using published data and [Fishbase])()), add weight predator or prey information when there is length available and then we do some additional cleaning (see below).
 
-The stomach content database for the Baltic sea (all countries, year 1963-2021) was downloaded at 16:21 Jan 15 2024.
+The stomach content database for the Baltic sea was downloaded twice. We use data for Lativa dowloaded at 16:21 Jan 15 2024 and for all other countries, year 1963-2021) was downloaded 
 
 ## Load libraries
   
@@ -63,11 +63,14 @@ Additional information
 
 ```{r data}
 # New database data, NDB are dived not four sheets
-# New data (from 20 August) that contains less stomachs: StomachContent_0820100197 
-# New data from January 2024: StomachContent_0115213707
+# New data from January 2024 for Latvia: StomachContent_0115213707
+# New data (October 2024) that contains less stomachs for Other countries: StomachContent_1021080172
 
-fi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/File_information.csv"))
-hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInformation.csv"), 
+fi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/File_information.csv")) |> filter(Country == "LV") |>
+  bind_rows(read_csv(paste0(home, "/data/stomach/StomachContent_1021080172/File_information.csv")) |> filter(!Country == "LV"))
+
+# For the other three sheets for the NDB we use the tblUploadID for excluding and including LV.
+hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInformation.csv"),
                col_types = list(
                  tblUploadID = col_double(),
                  tblHaulID = col_double(),
@@ -87,10 +90,38 @@ hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInforma
                  Depth = col_double(),
                  Survey = col_character(),
                  ICESDatabase = col_character(),
-                 Notes =  col_character())) # the parsing issues of hi causes no problems but specifying col_types corrects the datatypes. 
-pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PredatorInformation_edit.csv")) # edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column 'Notes' at row 7139,7144 and 7296.
-#pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0820100197/PredatorInformation.csv")) # Not edited
-prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PreyInformation.csv"))
+                 Notes =  col_character())) |> # the parsing issues of hi causes no problems but specifying col_types corrects the datatypes 
+  filter(tblUploadID %in% (fi |> filter(Country == "LV") |> pull(tblUploadID))) |>
+  bind_rows(read_csv(paste0(home, "/data/stomach/StomachContent_1021080172/HaulInformation.csv"),
+               col_types = list(
+                 tblUploadID = col_double(),
+                 tblHaulID = col_double(),
+                 Ship = col_character(),
+                 Gear = col_character(),
+                 HaulNo = col_double(),
+                 StationNumber = col_double(),
+                 Year = col_double(),
+                 Month = col_double(),
+                 Day = col_double(),
+                 Time = col_character(),
+                 ShootLat = col_double(),
+                 ShootLong = col_double(),
+                 HaulLat = col_double(),
+                 HaulLong = col_double(),
+                 ICESrectangle = col_character(),
+                 Depth = col_double(),
+                 Survey = col_character(),
+                 ICESDatabase = col_character(),
+                 Notes =  col_character())) |>
+              filter(tblUploadID %in% (fi |> filter(!Country == "LV") |> pull(tblUploadID)))) 
+
+pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PredatorInformation_edit.csv")) |> # edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column 'Notes' at row 7139,7144 and 7296. 
+  filter(tblUploadID %in% (fi |> filter(Country == "LV") |> pull(tblUploadID))) |>
+  bind_rows(read_csv(paste0(home, "/data/stomach/StomachContent_1021080172/PredatorInformation.csv")) |> filter(tblUploadID %in% (fi |> filter(!Country == "LV") |> pull(tblUploadID))))
+  
+prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PreyInformation.csv")) |>
+  filter(tblUploadID %in% (fi |> filter(Country == "LV") |> pull(tblUploadID))) |>
+  bind_rows(read_csv(paste0(home, "/data/stomach/StomachContent_1021080172/PreyInformation.csv")) |> filter(tblUploadID %in% (fi |> filter(!Country == "LV") |> pull(tblUploadID))))
 
 # Old database data (ODB)
 ODB <- read_csv(paste0(home, "/data/stomach/StomachDataOld.csv")) # from Stefan via Nis via Max
@@ -119,7 +150,7 @@ From all unique prey AphiaIDs and Scientific names in the different databases we
 
 # Function for getting AphiaIDs from Scientific names
 # getNamefAid <- function(Prey_LatinName, Prey_AphiaID, ...)  {
-# 
+#
 #    ScientificName = tryCatch(wm_id2name(id = Prey_AphiaID), error = function(e){
 #           message("Scientific name missing, returning NA:\n", e)
 #      NA
@@ -127,16 +158,16 @@ From all unique prey AphiaIDs and Scientific names in the different databases we
 #    )
 #    return(tibble(ScientificName, Prey_LatinName, Prey_AphiaID)) # preserve ScientificNames for matching in db later
 #     }
-# 
+#
 # ODBcheck <- ODB |>  filter(Predator_LatinName == "Gadus morhua",
-#                            Longitude > 13) |> 
-#   dplyr::select(Prey_LatinName, Prey_AphiaID) |> 
+#                            Longitude > 13) |>
+#   dplyr::select(Prey_LatinName, Prey_AphiaID) |>
 #   distinct() |>
 #   pmap(possibly(getNamefAid, otherwise = NULL))  |>
 #   list_rbind()
-# 
+#
 # ODBcheck |>
-#   filter(Prey_LatinName != ScientificName) 
+#   filter(Prey_LatinName != ScientificName)
 
 # For these, we skip the AID and go for Names instead. So if both Prey_LatinName and Prey_AphaID is present, we use name for getting records and LW as and bs.
 
@@ -260,10 +291,11 @@ From all unique prey AphiaIDs and Scientific names in the different databases we
 # 
 # preySpecies_records4 <- preySpecies_records2 |> slice(-c(1,13,29,34,53)) |> filter(is.na(db_AphiaID)) |>
 #   mutate(db_AphiaID = case_when(db_ScientificName %in% c("Pisces/Osteichthyes","Scales","scales", "Unidentified fish","Fish eggs","Pomatoschistus otholyth","Salmon stomach") ~ 152352,
-#                                 db_ScientificName %in% c("Stone","Waste","Wood","Algae","stone","wood", "Aglae", "plastic", "carbon","Carbon","Plastic","Plastics","Litter/plastics", "Phaeophycophyta", "Sand","Unidentified algae covered wit","Unidentified mass","Undefined mass") ~ NA,
+#                                 db_ScientificName %in% c("Stone","Waste","Wood","Algae","stone","wood", "Aglae", "plastic", "carbon","Carbon","Plastic","Plastics","Litter/plastics", "", "Sand","Unidentified algae covered wit","Unidentified mass","Undefined mass") ~ NA,
 #                                 db_ScientificName %in% c("remains","mucus","Remains","digestive tract","Unidentified remains","Spawn","Siphon","Entrails","Chicken bone","Zooplancton","Unidentified invertebrata","Unidentified worm") ~ 2,
 #                                 db_ScientificName %in% c("Mytilus sp.","Mytilus sp") ~ 138228,
 #                                 db_ScientificName == "Idotea sp." ~ 118454,
+#                                 db_ScientificName == "Phaeophycophyta" ~ 830,
 #                                 db_ScientificName == "Crangon" ~ 107007,
 #                                 db_ScientificName == "Pectinaria sp." ~ 129437,
 #                                 db_ScientificName == "Gobius niger" ~ 126892,
@@ -381,13 +413,13 @@ preyTaxamatch <- readRDS(paste0(home, "/data/stomach/preyTaxamatch.rds"))
 
 length-weight relationships retrived from and [Fishbase](https://www.fishbase.se/) using [rfishbase](10.32614/CRAN.package.rfishbase).
 ```{r lw coeffs}
-# Using NSab. Coefficients are for mm while fishbase is for cm. We´ll correcct for this below
-#
+
+# # Using NSab where coefficients are for length in mm while fishbase is for cm. We´ll correct for this below
 # preyTaxamatch_Invert <- preyTaxamatch |>
 #   filter(!phylum == "Chordata",
-#          !is.na(valid_name)
+#          !is.na(scientificname)
 #          ) |>
-#   stringdist_left_join(NSab |> dplyr::select("Species", "a", "b"), by = c(valid_name = "Species")) |>
+#   stringdist_left_join(NSab |> dplyr::select("Species", "a", "b"), by = c(scientificname = "Species")) |>
 #   mutate(abTaxlevel = if_else(is.na(a), NA, "species"))
 # 
 # # get mean a and b per order
@@ -440,7 +472,7 @@ length-weight relationships retrived from and [Fishbase](https://www.fishbase.se
 # getabsChord <- function(nam, ind)  {
 # 
 #   lwab = length_weight(nam) |>
-#     filter(Type == "TL") |> # filter out total length messurements
+#     filter(Type == "TL") |> # filter out total length measurements
 #     summarise(a = mean(a), b = mean(b))
 # 
 #   bind_cols(preyTaxamatch_Chord[ind,], lwab)
@@ -452,14 +484,14 @@ length-weight relationships retrived from and [Fishbase](https://www.fishbase.se
 # plan(multisession, workers = 3) # saves 40% time in a small test
 # preyTaxamatch_Chord <- preyTaxamatch_Chord |>
 #   pull(valid_name) |>
-#  future_imap(\(x, idx) getabsChord(x, idx)) |>
+#  future_imap(\(x, idx) getabsChord(x, idx), .options = furrr_options(seed = T)) |>
 #  list_rbind()
 # plan(sequential)
 # 
 # preyTaxamatch_Chord <- preyTaxamatch_Chord |>
 #  mutate(abTaxlevel = if_else(is.na(a), NA, "species"))
 # 
-# # lots missing
+# # lots of as and bs missing
 # preyTaxamatch_Chord |> filter(is.na(a))
 # 
 # # use family instead of genus
@@ -474,15 +506,17 @@ length-weight relationships retrived from and [Fishbase](https://www.fishbase.se
 #   mutate(abTaxlevel = if_else(is.na(a), NA, "family")) |>
 #   bind_rows(preyTaxamatch_Chord |> filter(!is.na(a)))
 # 
-# # lef over fish and tunicates
+# # left over fish and tunicates
 # preyTaxamatch_Chord2 |> filter(is.na(a))
-# lets use mean a and b for the chordates for these
+# 
+# # lets use mean a and b for the chordates for these
 # cho_meanab <- preyTaxamatch_Chord2 |>
 #   summarise(mean_a = mean(a, na.rm=TRUE), mean_b = mean(b, na.rm=TRUE))
-# preyTaxamatch_Chord2 <- preyTaxamatch_Chord2 |> 
+# 
+# preyTaxamatch_Chord2 <- preyTaxamatch_Chord2 |>
 #   mutate(a = if_else(is.na(a), cho_meanab$mean_a, a),
 #          b = if_else(is.na(b), cho_meanab$mean_b, b))
-#
+# 
 # # Join in join in invertebrates
 # preyTaxamatch_LW <- preyTaxamatch_Chord2 |>
 #   bind_rows(preyTaxamatch_Invert4 |> dplyr::select(-Species))
@@ -494,14 +528,17 @@ length-weight relationships retrived from and [Fishbase](https://www.fishbase.se
 preyTaxamatch_LW <- readRDS(paste0(home, "/data/stomach/preyTaxamatch_LW.rds"))
 
 preyTaxamatch_LW |>
+  filter(is.na(a))
+
+preyTaxamatch_LW |>
   filter(!is.na(a)) |>
   pivot_longer(cols = c("a", "b"), values_to = "value", names_to = "params") |>
   ggplot() +
-  geom_histogram(aes(value, fill = abTaxlevel), legend = FALSE) + #, bins = 100) +
+  geom_histogram(aes(value, fill = abTaxlevel)) + #, bins = 100) +
   facet_grid(params~abTaxlevel) +
   guides(fill="none")
 
-# two groupings of a and bs in the histograms above are due to phulm I think, fish have small a and invertebrates have a:s around 23
+# two groupings of a and bs in the histograms above are due to phylum I think, fish have small a and invertebrates have a:s around 23
 preyTaxamatch_LW |>
   filter(phylum %in% c("Chordata", "Arthropoda")) |>
   summarise(mean_a = mean(a, na.rm = TRUE), mean_b = mean(b, na.rm = TRUE), .by = phylum)
@@ -536,7 +573,7 @@ pred <- left_join(pred |> dplyr::select(-Notes), # join in predator data
                   by = comcol_hifi_pred[!comcol_hifi_pred == "Notes"])
 ```
 
-### Fix NDB pred regurgitated stomachs
+### Fix pred regurgitated stomachs
 
 ```{r join in prey NDB}
 # In the Swedish data, 2 means regurgitated and 1 is intact, but for the rest, 1 means regurgitated, 0 or NA means intact. All NA values are from 2020 and 2021 and for all regurguitated=0 before 2005 (see Neuenfeldt 2020 discussion, https://doi.org/10.1093/icesjms/fsz224). So we dont know if they are truly not regurgitated. Therefore there is not much info of value from the regurgitated column. 
@@ -568,9 +605,9 @@ prey <- prey |>
   filter(!tblPredatorInformationID %in% regurg_ids$tblPredatorInformationID)
 
 ```
+
 ### Join in prey data
 Now join predator data to prey data following the same procedure.
-
 ```{r join in pred to prey}
 intersect(colnames(pred), colnames(prey))
 
@@ -633,7 +670,7 @@ new_db_preyTaxamatch_LW <- preyTaxamatch_LW |>
 new_db2 <- new_db |> # note necessary argument na_matches
   left_join(new_db_preyTaxamatch_LW, join_by("AphiaIDPrey"=="db_AphiaID"), na_matches = "never")
 
-# we lack a and b for few species as phylum as a taxonomic level is used but when a and b is missing, we use a = 0.01 and b = 3
+# we lack a and b for few species when phylum as a taxonomic level is used but when a and b is missing (when abTaxlevel is NA), we use a = 0.01 and b = 3
 new_db2 |> 
   summarise(n = n(), mean_a = mean(a, na.rm = TRUE), median_a = median(a, na.rm = TRUE), mean_b = mean(b, na.rm = TRUE), median_b = median(b, na.rm = TRUE), .by = abTaxlevel)
 
@@ -723,17 +760,34 @@ new_db5 <- new_db4 |> # arguments are evaluated in order so proceed from specifi
                                 valid_name == "Sprattus sprattus"~ "sprat",
                                 valid_name == "Saduria entomon" ~ "saduria",
                                 family == "Clupeidae" ~ "unidd_clupeids", # temporary, see below
-                                is.na(AphiaIDPrey) ~ "other",
+                                #is.na(valid_name) ~ "other",
                                 phylum == "Chordata"~ "other_chords",
-                                !phylum == "Chordata" & !is.na(AphiaIDPrey) ~ "other_inverts",
-                                .default = NA))
+                                kingdom == "Animalia" & !phylum == "Chordata" ~ "other_inverts",
+                                .default = "other"))
+
 
 # seems to work
 new_db5 |>
   summarise(n = n(), .by= prey_group)
-new_db5 |> # only NA prey ids in the other group
+
+new_db5 |> # only NA prey ids and Fucus in the other group
   filter(prey_group == "other") |>
   summarise(n = n(), .by = AphiaIDPrey)
+
+# The NAs
+new_db5 |> 
+  filter(is.na(prey_group))
+
+# only fish in other Chordates 
+new_db5 |>  
+  filter(prey_group %in% c("other_chords")) |>
+  summarise(n= n(), .by = valid_name)
+
+# only invert phyla
+new_db5 |>  
+  filter(prey_group %in% c("other_inverts")) |>
+  summarise(n= n(), .by = phylum)
+
 
 ```
 
@@ -847,6 +901,13 @@ new_dat2 <- new_dat2 |>
 
 # Remove non cod predators (e.g. Whiting 126438)
 new_data <- new_dat2 |> filter(AphiaIDPredator %in% c(126436))
+
+new_data |>
+  summarise(count = n(), .by = c(Year, Country)) |>
+  ggplot() +
+  geom_bar(aes(Year, count, fill = Country), alpha = 1, stat="identity", position = "stack") +
+  scale_x_continuous(n.breaks = 10) + ylab("# stomachs") +
+  labs(title="New data base")
 
 ```
 
@@ -1053,14 +1114,33 @@ missing_db9 <- missing_db8 |> # arguments are evaluated in order so proceed from
                                 valid_name == "Sprattus sprattus"~ "sprat",
                                 valid_name == "Saduria entomon" ~ "saduria",
                                 family == "Clupeidae" ~ "unidd_clupeids", # temporary, see below
-                                is.na(valid_name) ~ "other",
+                                #is.na(valid_name) ~ "other",
                                 phylum == "Chordata"~ "other_chords",
-                                !phylum == "Chordata" & !is.na(valid_name) ~ "other_inverts",
-                                .default = NA))
+                                kingdom == "Animalia" & !phylum == "Chordata" ~ "other_inverts",
+                                .default = "other"))
 
 # seems to work
 missing_db9 |>
   summarise(n = n(), .by= prey_group)
+
+missing_db9 |> # only NA prey ids and Fucus in the other group. We set all non bio to NA in the get taxonomy chunk.
+  filter(prey_group == "other") |>
+  summarise(n = n(), .by = db_CleanScientificName)
+
+# The NAs
+missing_db9 |> 
+  filter(is.na(prey_group))
+
+# only fish and a few Gnathostomata in other Chordates 
+missing_db9 |>  
+  filter(prey_group %in% c("other_chords")) |>
+  summarise(n= n(), .by = valid_name)
+
+# only invert phyla
+missing_db9 |>  
+  filter(prey_group %in% c("other_inverts")) |>
+  summarise(n= n(), .by = phylum)
+
 # Perfect apart from that in the other group there are some animal prey that is classified as animalia: "Zooplancton","Unidentified invertebrata","Unidentified worm". We choose to live with having these as "other" and not as invertebrates. 
 missing_db9 |> 
   filter(prey_group == "other",
@@ -1173,10 +1253,9 @@ SE3 <- SE2 |> # arguments are evaluated in order so proceed from specific to gen
                                 valid_name == "Sprattus sprattus"~ "sprat",
                                 valid_name == "Saduria entomon" ~ "saduria",
                                 family == "Clupeidae" ~ "unidd_clupeids", # temporary, see below
-                                is.na(valid_name) ~ "other",
                                 phylum == "Chordata"~ "other_chords",
-                                !phylum == "Chordata" & !is.na(valid_name) ~ "other_inverts",
-                                .default = NA))
+                                kingdom == "Animalia" & !phylum == "Chordata" ~ "other_inverts",
+                                .default = "other"))
 
 SE3 |> summarise(n = n(), .by= prey_group)
 
@@ -1469,6 +1548,57 @@ all_data6 <- all_data6 |>
   filter( lon > 13)
 ```
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## 10. Last fixes, spatiotemporal distribution and save data
 ```{r last fixes all data}
 #| out-width: 100%
@@ -1512,7 +1642,4 @@ ggsave(paste0(home, "/figures/supp/year_diet_map.pdf"), width = 15, height = 15,
 
 ```{r Save}
 # Save data
-
-write_csv(df, paste0(home, "/data/stomach/stomachs_v1.csv")) # StomachContent_0115213707
-#write_csv(df, paste0(home, "/data/stomach/stomachs_v1.csv")) # StomachContent_0820100197 
-```
+write_csv(df, paste0(home, "/data/stomach/stomachs_v1.csv")) # ```

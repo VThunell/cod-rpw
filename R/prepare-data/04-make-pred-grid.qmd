@@ -88,7 +88,7 @@ d |>
 pred_grid_tmp <- expand.grid(
   X = seq(min(d$X), max(d$X), cell_width),
   Y = seq(min(d$Y), max(d$Y), cell_width),
-  year = c(1963:2022)) |>
+  year = c(1963:2023)) |>
   mutate(month = 3)
 
 ggplot(pred_grid_tmp |> filter(year == 2019), aes(X, Y)) +
@@ -246,18 +246,18 @@ plot_map_fc +
   geom_point(data = unique(theNAs |> dplyr::select(Y,X)), aes(X*1000, Y*1000)) +
   theme_sleek(base_size = 6) + 
   geom_sf() 
-
+# We give them values based on the closest value in the hindcast 
 # the 18300 unique hindcast latlon from which we can use get new lat lon to extract to predgrid with
 hc_ull = hindcast_allyears |> filter(yearmonth == 1) |> dplyr::select(lon,lat)
 
-# get the nearest nieghbor
+# get the nearest neighbor
 pl <- unique(theNAs |> dplyr::select(lon,lat) ) |>
   distance( y = hc_ull, lonlat = TRUE) 
 
 # select which row in hc_ull has the smallest distance to each of theNAs
 pl2 <- hc_ull[apply(pl, 1, FUN = which.min),] # cf a lengthy and slow dplyr version
 
-# combine the real lat lons with their hc_ull corresponding neighbors, temporarliy rename real lat lon for a left_join below.
+# combine the real lat lons with their hc_ull corresponding neighbors, temporarily rename real lat lon for a left_join below.
 pl3 <- bind_cols(unique(theNAs |> dplyr::select(lon,lat) |> rename(reallat = lat,
          reallon = lon)), pl2 )
 
@@ -297,10 +297,18 @@ plot_map_fc +
   geom_sf() 
 
 plot_map_fc +
-  geom_tile(data = pred_grid_tmp3, aes(X*1000, Y*1000, fill = sal), alpha = 0.5) +
+  #geom_tile(data = pred_grid_tmp3 |> filter(year %in% c(seq(1963,2023,10))), aes(X*1000, Y*1000, fill = sal)) +
+  geom_tile(data = pred_grid_tmp3 |> filter(year == 2023), aes(X*1000, Y*1000, fill = sal)) +
   theme_sleek(base_size = 6) + 
+  facet_wrap(~year) +
+  scale_fill_viridis() +
   geom_sf() 
 
+plot_map_fc +
+  geom_tile(data = pred_grid_tmp3 |> filter(year %in% c(2015:2022)), aes(X*1000, Y*1000, fill = temp)) +
+  theme_sleek(base_size = 6) + 
+  facet_wrap(~year) +
+  geom_sf() 
 ```
 
 ## Add cod densities, only for post 1992!
@@ -395,13 +403,17 @@ zeropgplot <- pred_grid_done |>
   #filter(value < 0)
 
 plot_map +
-  geom_raster(data = zeropgplot, aes(X*1000, Y*1000, fill = value_sc)) +
-  #facet_wrap(~year) +
-  facet_wrap(~variable) +
-  scale_fill_viridis() # seems plausible except for minus temp out at sea. 
+  geom_raster(data = zeropgplot |> filter(variable == "oxy") |> filter(year %in% seq(1998,2023,5)), aes(X*1000, Y*1000, fill = value_sc)) +
+  facet_wrap(~year) +
+  scale_fill_viridis()
 
 plot_map +
-  geom_raster(data = zeropgplot |> filter(variable == "temp") |> filter(year %in% c(1983,1996,2006,2019)), aes(X*1000, Y*1000, fill = value_sc)) +
+  geom_raster(data = zeropgplot |> filter(variable == "sal") |> filter(year %in% seq(1998,2023,5)), aes(X*1000, Y*1000, fill = value_sc)) +
+  facet_wrap(~year) +
+  scale_fill_viridis()
+
+plot_map +
+  geom_raster(data = zeropgplot |> filter(variable == "temp") |> filter(year %in% seq(1998,2023,5)), aes(X*1000, Y*1000, fill = value_sc)) +
   facet_wrap(~year) +
   scale_fill_viridis() # 1996 and 2006 was cold years
 
