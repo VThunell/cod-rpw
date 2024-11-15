@@ -3077,27 +3077,27 @@ vertical-align: -.125em;
 <section id="read-stomach-data" class="level2">
 <h2 class="anchored" data-anchor-id="read-stomach-data">Read stomach data</h2>
 <div class="cell" data-layout-align="center">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="fu">paste0</span>(home, <span class="st">&quot;/data/stomach/ran_rpwg_long.csv&quot;</span>))</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co">#df &lt;- read.csv(paste0(home, &quot;/Data_rpwg_long.csv&quot;))</span></span>
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">#df &lt;- read.csv(paste0(home, &quot;/data/stomach/ran_rpwg_long.csv&quot;))</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="fu">paste0</span>(home, <span class="st">&quot;/QsdmTMB_dforum/Data_rpwg_long.csv&quot;</span>))</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">glimpse</span>(df)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Rows: 431,905
+<pre><code>Rows: 250,180
 Columns: 14
-$ year        &lt;int&gt; 1971, 1990, 1975, 1984, 1963, 1993, 1977, 1984, 1973, 1988…
+$ year        &lt;int&gt; 1990, 1984, 1993, 1984, 1988, 2008, 2017, 1986, 2019, 2017…
 $ X           &lt;dbl&gt; 722.4472, 722.4472, 722.4472, 722.4472, 722.4472, 722.4472…
 $ Y           &lt;dbl&gt; 6128.197, 6128.197, 6128.197, 6128.197, 6128.197, 6128.197…
 $ lat         &lt;dbl&gt; 55.25, 55.25, 55.25, 55.25, 55.25, 55.25, 55.25, 55.25, 55…
-$ lon         &lt;dbl&gt; 18.5, 18.5, 18.5, 18.5, 18.5, 18.5, 18.5, 18.5, 18.5, 18.5…
-$ end_sc      &lt;dbl&gt; 0.4067589, 0.4067589, 0.4067589, 0.4067589, 0.4067589, 0.4…
-$ year_sc     &lt;dbl&gt; -0.946504, -0.946504, -0.946504, -0.946504, -0.946504, -0.…
-$ p_length_sc &lt;dbl&gt; 0.6784496, 0.6784496, 0.6784496, 0.6784496, 0.6784496, 0.9…
-$ d_sc        &lt;dbl&gt; 266.5904, 266.5904, 266.5904, 266.5904, 266.5904, 266.5904…
-$ eno_sc      &lt;dbl&gt; -0.1484480, -0.1484480, -0.1484480, -0.1484480, -0.1484480…
-$ ens_sc      &lt;dbl&gt; 0.5309252, 0.5309252, 0.5309252, 0.5309252, 0.5309252, 0.5…
-$ ent_sc      &lt;dbl&gt; -0.6041922, -0.6041922, -0.6041922, -0.6041922, -0.6041922…
-$ prey_group  &lt;chr&gt; &quot;rg_3&quot;, &quot;rg_2&quot;, &quot;rg_1&quot;, &quot;rg_5&quot;, &quot;rg_4&quot;, &quot;rg_3&quot;, &quot;rg_2&quot;, &quot;r…
-$ value       &lt;dbl&gt; 2.596885e-02, 0.000000e+00, 0.000000e+00, 0.000000e+00, 9.…</code></pre>
+$ lon         &lt;dbl&gt; 18.5, 18.5, 18.5, 18.5, 18.5, 18.5, 18.5, 18.5, 20.5, 20.5…
+$ end_sc      &lt;dbl&gt; 0.6088132, 0.6088132, 0.6088132, 0.6088132, 0.6088132, 0.6…
+$ year_sc     &lt;dbl&gt; 0.2158504, -0.1236296, 0.3855904, -0.1236296, 0.1026904, 1…
+$ p_length_sc &lt;dbl&gt; 0.826324744, 0.826324744, 1.103760027, 1.103760027, 1.1037…
+$ d_sc        &lt;dbl&gt; 266.6124, 266.6124, 266.6124, 266.6124, 266.6124, 266.6124…
+$ eno_sc      &lt;dbl&gt; -0.3376027, -0.3376027, -0.3376027, -0.3376027, -0.3376027…
+$ ens_sc      &lt;dbl&gt; 0.7298410, 0.7298410, 0.7298410, 0.7298410, 0.7298410, 0.7…
+$ ent_sc      &lt;dbl&gt; -0.6009097, -0.6009097, -0.6009097, -0.6009097, -0.6009097…
+$ prey_group  &lt;chr&gt; &quot;rg_2&quot;, &quot;rg_5&quot;, &quot;rg_3&quot;, &quot;rg_1&quot;, &quot;rg_4&quot;, &quot;rg_3&quot;, &quot;rg_2&quot;, &quot;r…
+$ value       &lt;dbl&gt; 0.000000e+00, 0.000000e+00, 2.521701e-02, 0.000000e+00, 3.…</code></pre>
 </div>
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>df2 <span class="ot">&lt;-</span> df <span class="sc">|&gt;</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">prey_group_f =</span> <span class="fu">as.factor</span>(prey_group),</span>
@@ -3121,7 +3121,8 @@ $ value       &lt;dbl&gt; 2.596885e-02, 0.000000e+00, 0.000000e+00, 0.000000e+00
 </section>
 <section id="fit-and-check-model" class="level1">
 <h1>Fit and check model</h1>
-<p>I´m excluding spatial and spatiotemporal random effects to prevent R from crashing (see my original spatial spatiotemporal commented out)</p>
+<p>The number of observations are reduced to make them possible to work with (fitting and predicting). The data is not the original data as it is unpublished and has thus been altered.</p>
+<p>I´m excluding spatial and spatiotemporal random effects to prevent R from crashing (see my original spatial and spatiotemporal commented out). Contact me if you want ot try reproduce R crashing.</p>
 <div class="cell" data-layout-align="center" data-hash="QDisc-compare-smooth-prey_group_cache/html/fit s_2d595be0cbf524cee165f41a1ad81164">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">#make mesh</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>mesh_long <span class="ot">&lt;-</span> <span class="fu">make_mesh</span>(df2, <span class="fu">c</span>(<span class="st">&quot;X&quot;</span>, <span class="st">&quot;Y&quot;</span>), <span class="at">cutoff =</span> <span class="dv">25</span>)</span>
@@ -3171,15 +3172,16 @@ $ value       &lt;dbl&gt; 2.596885e-02, 0.000000e+00, 0.000000e+00, 0.000000e+00
 <span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a><span class="fu">Sys.time</span>() <span class="sc">-</span> time</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Time difference of 32.15568 mins</code></pre>
+<pre><code>Time difference of 20.16762 mins</code></pre>
 </div>
 </div>
-<div class="cell" data-layout-align="center" data-hash="QDisc-compare-smooth-prey_group_cache/html/check_813c50c20cbb98b018a3ae4a2af010ec">
+<p>The largest contribution to memory use is fitting smoothers.</p>
+<div class="cell" data-layout-align="center" data-hash="QDisc-compare-smooth-prey_group_cache/html/check_cafee3006df3fb71d24cc89cf9cf62ef">
 <div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>p <span class="sc">|&gt;</span></span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(bytes <span class="sc">&gt;</span> <span class="dv">5000000</span>) <span class="sc">|&gt;</span></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(<span class="sc">-</span>bytes)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>filter: removed 112,056 rows (&gt;99%), 238 rows remaining</code></pre>
+<pre><code>filter: removed 132,941 rows (&gt;99%), 238 rows remaining</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>Rprofmem memory profiling of:
@@ -3675,24 +3677,27 @@ total                                                                           
 </div>
 <div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">total</span>(p)<span class="sc">/</span><span class="dv">10</span><span class="sc">^</span><span class="dv">9</span> <span class="co"># gig</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 8.110229</code></pre>
+<pre><code>[1] 8.187218</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ifelse</span>(<span class="fu">exists</span>(<span class="st">&quot;Mod_smooth_s&quot;</span>), <span class="fu">sanity</span>(Mod_smooth_s), <span class="st">&quot;no fit&quot;</span>) </span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ifelse</span>(<span class="fu">exists</span>(<span class="st">&quot;Mod_smooth_s&quot;</span>), <span class="fu">sanity</span>(Mod_smooth_s), <span class="st">&quot;no fit&quot;</span>)  <span class="co"># use ifelse exists when rendering and fitting may not be successful.</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stderr">
 <pre><code>✔ Non-linear minimizer suggests successful convergence
 ✔ Hessian matrix is positive definite
 ✔ No extreme or very small eigenvalues detected
 ✔ No gradients with respect to fixed effects are &gt;= 0.001
 ✔ No fixed-effect standard errors are NA
-✔ No standard errors look unreasonably large
-✔ No sigma parameters are &lt; 0.01
+✖ `ln_smooth_sigma` standard error may be large
+ℹ Try simplifying the model, adjusting the mesh, or adding priors</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>✔ No sigma parameters are &lt; 0.01
 ✔ No sigma parameters are &gt; 100</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[[1]]
 [1] TRUE</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>Mod_smooth_s</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>Mod_smooth_s</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>Model fit by ML [&#39;sdmTMB&#39;]
 Formula: val_cube ~ 0 + prey_group_f + s(p_length_sc, year_sc, by = prey_group_f) + 
@@ -3712,34 +3717,34 @@ We&#39;ll use generic covariate names (&#39;scovariate&#39;) here intead.</code>
 <div class="cell-output cell-output-stdout">
 <pre><code>Family: binomial(link = &#39;log&#39;) 
                  coef.est coef.se
-prey_group_frg_1    -3.07    0.05
-prey_group_frg_2    -2.16    0.04
-prey_group_frg_3    -1.53    0.03
-prey_group_frg_4    -2.62    0.03
-prey_group_frg_5     0.07    0.01
-end_sc              -0.04    0.01
-ens_sc              -0.03    0.01
-ent_sc              -0.01    0.01
+prey_group_frg_1    -2.87    0.04
+prey_group_frg_2    -2.07    0.04
+prey_group_frg_3    -1.41    0.03
+prey_group_frg_4    -2.23    0.02
+prey_group_frg_5     0.06    0.01
+end_sc              -0.03    0.01
+ens_sc              -0.02    0.01
+ent_sc               0.00    0.01
 eno_sc               0.03    0.01
-scovariate-1         1.18    0.25
-scovariate-2         1.10    0.29
-scovariate-3         0.11    0.18
-scovariate-4         1.04    0.21
-scovariate-5        -1.21    0.16
-scovariate-6         0.95    0.18
-scovariate-7         0.70    0.14
-scovariate-8         1.47    0.14
-scovariate-9        -0.33    0.12
-scovariate-10       -0.76    0.15
+scovariate-1        -0.07    0.09
+scovariate-2         0.80    0.16
+scovariate-3        -0.26    0.13
+scovariate-4         1.12    0.21
+scovariate-5        -0.06    0.15
+scovariate-6         1.39    0.27
+scovariate-7         0.02    0.08
+scovariate-8         0.95    0.13
+scovariate-9        -0.01    0.03
+scovariate-10       -0.69    0.05
 
 Smooth terms:
                                            Std. Dev.
-sds(p_length_sc,year_sc):prey_group_frg_1)      4.67
-sds(p_length_sc,year_sc):prey_group_frg_2)      3.21
-sds(p_length_sc,year_sc):prey_group_frg_3)      4.61
-sds(p_length_sc,year_sc):prey_group_frg_4)      2.82
-sds(p_length_sc,year_sc):prey_group_frg_5)      1.43
-sds(d_sc)                                       0.06
+sds(p_length_sc,year_sc):prey_group_frg_1)      1.11
+sds(p_length_sc,year_sc):prey_group_frg_2)      1.71
+sds(p_length_sc,year_sc):prey_group_frg_3)      2.85
+sds(p_length_sc,year_sc):prey_group_frg_4)      1.50
+sds(p_length_sc,year_sc):prey_group_frg_5)      0.25
+sds(d_sc)                                       0.08
 
 
 Delta/hurdle model 2: -----------------------------------</code></pre>
@@ -3753,80 +3758,122 @@ We&#39;ll use generic covariate names (&#39;scovariate&#39;) here intead.</code>
 <div class="cell-output cell-output-stdout">
 <pre><code>Family: lognormal(link = &#39;log&#39;) 
                  coef.est coef.se
-prey_group_frg_1    -1.40    0.02
-prey_group_frg_2    -1.42    0.02
-prey_group_frg_3    -1.79    0.01
-prey_group_frg_4    -1.70    0.01
-prey_group_frg_5    -2.44    0.01
-end_sc               0.00    0.00
-ens_sc               0.02    0.01
-ent_sc               0.00    0.00
-eno_sc               0.00    0.01
-scovariate-1         0.04    0.06
-scovariate-2         0.02    0.06
-scovariate-3         0.11    0.06
-scovariate-4         0.01    0.07
-scovariate-5         0.04    0.07
-scovariate-6        -0.15    0.08
-scovariate-7        -0.14    0.06
-scovariate-8        -0.22    0.06
-scovariate-9         0.59    0.08
-scovariate-10       -0.04    0.11
+prey_group_frg_1    -1.38    0.02
+prey_group_frg_2    -1.36    0.01
+prey_group_frg_3    -1.76    0.01
+prey_group_frg_4    -1.75    0.01
+prey_group_frg_5    -2.37    0.01
+end_sc               0.01    0.00
+ens_sc               0.04    0.00
+ent_sc              -0.02    0.00
+eno_sc               0.01    0.01
+scovariate-1         0.00    0.02
+scovariate-2        -0.01    0.04
+scovariate-3         0.01    0.01
+scovariate-4        -0.17    0.01
+scovariate-5         0.01    0.01
+scovariate-6        -0.06    0.03
+scovariate-7        -0.01    0.04
+scovariate-8        -0.21    0.06
+scovariate-9         0.01    0.04
+scovariate-10        0.03    0.07
 
 Smooth terms:
                                            Std. Dev.
-sds(p_length_sc,year_sc):prey_group_frg_1)      0.39
-sds(p_length_sc,year_sc):prey_group_frg_2)      0.54
-sds(p_length_sc,year_sc):prey_group_frg_3)      0.74
-sds(p_length_sc,year_sc):prey_group_frg_4)      0.62
-sds(p_length_sc,year_sc):prey_group_frg_5)      1.72
-sds(d_sc)                                       0.02
+sds(p_length_sc,year_sc):prey_group_frg_1)      0.15
+sds(p_length_sc,year_sc):prey_group_frg_2)      0.00
+sds(p_length_sc,year_sc):prey_group_frg_3)      0.10
+sds(p_length_sc,year_sc):prey_group_frg_4)      0.43
+sds(p_length_sc,year_sc):prey_group_frg_5)      0.50
+sds(d_sc)                                       0.17
 
-Dispersion parameter: 0.46
+Dispersion parameter: 0.49
 
-ML criterion at convergence: 18449.639
+ML criterion at convergence: 23876.092
 
-See ?tidy.sdmTMB to extract these values as a data frame.</code></pre>
+See ?tidy.sdmTMB to extract these values as a data frame.
+
+**Possible issues detected! Check output of sanity().**</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="co">#ifelse(exists(&quot;Mod_smooth_1&quot;), AIC(Mod_smooth_1), &quot;no fit&quot;)</span></span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Mod_1_res &lt;- sdmTMBextra::predict_mle_mcmc(Mod_smooth_1, mcmc_warmup = 150, mcmc_iter = 151)</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="co"># qqnorm(residuals(Mod_smooth_1, &quot;mle-mcmc&quot;, mcmc_samples = Mod_1_res)) # good</span></span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="co"># qqline(residuals(Mod_smooth_1, &quot;mle-mcmc&quot;, mcmc_samples = Mod_1_res))</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
-<div class="cell" data-layout-align="center" data-hash="QDisc-compare-smooth-prey_group_cache/html/fit t2_ae57d53c86f0c1088cd8ab5fa603c19c">
-<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>time <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>()</span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>  p2<span class="ot">&lt;-</span><span class="fu">profmem</span>({</span>
-<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>  Mod_smooth_t2 <span class="ot">&lt;-</span></span>
-<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sdmTMB</span>(</span>
-<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> df2,</span>
-<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">mesh =</span> mesh_long,</span>
-<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">formula =</span> val_cube <span class="sc">~</span> <span class="dv">0</span> <span class="sc">+</span></span>
-<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a>      prey_group_f <span class="sc">+</span></span>
-<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a>      <span class="fu">t2</span>(p_length_sc, year_sc, <span class="at">by =</span> prey_group_f, <span class="at">k=</span><span class="fu">c</span>(<span class="dv">4</span>,<span class="dv">10</span>)) <span class="sc">+</span></span>
-<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a>      <span class="fu">s</span>(d_sc, <span class="at">bs =</span> <span class="st">&quot;cc&quot;</span>) <span class="sc">+</span></span>
-<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a>      end_sc <span class="sc">+</span></span>
-<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a>      ens_sc <span class="sc">+</span></span>
-<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a>      ent_sc <span class="sc">+</span></span>
-<span id="cb25-14"><a href="#cb25-14" aria-hidden="true" tabindex="-1"></a>      eno_sc,</span>
-<span id="cb25-15"><a href="#cb25-15" aria-hidden="true" tabindex="-1"></a>    <span class="co">#time = &quot;year&quot;,</span></span>
-<span id="cb25-16"><a href="#cb25-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">extra_time =</span> missing_years,</span>
-<span id="cb25-17"><a href="#cb25-17" aria-hidden="true" tabindex="-1"></a>    <span class="at">spatial =</span> <span class="st">&quot;off&quot;</span>,</span>
-<span id="cb25-18"><a href="#cb25-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">spatiotemporal =</span> <span class="st">&quot;off&quot;</span>,</span>
-<span id="cb25-19"><a href="#cb25-19" aria-hidden="true" tabindex="-1"></a>    <span class="co"># spatiotemporal = &quot;iid&quot;,</span></span>
-<span id="cb25-20"><a href="#cb25-20" aria-hidden="true" tabindex="-1"></a>    <span class="co"># spatial_varying = ~ 0 + prey_group_f,</span></span>
-<span id="cb25-21"><a href="#cb25-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">family =</span> <span class="fu">delta_lognormal</span>(<span class="at">type =</span> <span class="st">&quot;poisson-link&quot;</span>)</span>
-<span id="cb25-22"><a href="#cb25-22" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb25-23"><a href="#cb25-23" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb25-24"><a href="#cb25-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">Sys.time</span>() <span class="sc">-</span> time</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>Time difference of 2.185352 hours</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co"># </span></span>
-<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>p2 <span class="sc">|&gt;</span></span>
-<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(bytes <span class="sc">&gt;</span> <span class="dv">10000000</span>) <span class="sc">|&gt;</span></span>
-<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(<span class="sc">-</span>bytes)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<p>I can make predictions as the data is a subset (146 000) of the original 430 000 observations.</p>
+<div class="cell" data-layout-align="center" data-hash="QDisc-compare-smooth-prey_group_cache/html/predict_6fad5faf4f7f9ea8d9f73f53d5d13501">
+<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="co"># predict on data</span></span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>nd_Mod_test <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(<span class="st">&quot;p_length_sc&quot;</span> <span class="ot">=</span> <span class="fu">seq</span>(<span class="fu">min</span>(df2<span class="sc">$</span>p_length_sc),</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>                                                  <span class="fu">max</span>(df2<span class="sc">$</span>p_length_sc),</span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>                                                  <span class="at">length.out =</span><span class="dv">30</span>),</span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>                            <span class="st">&quot;prey_group_f&quot;</span> <span class="ot">=</span> <span class="fu">levels</span>(df2<span class="sc">$</span>prey_group_f),</span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>                            <span class="st">&quot;year_sc&quot;</span> <span class="ot">=</span> <span class="fu">seq</span>(<span class="fu">min</span>(df2<span class="sc">$</span>year_sc),</span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>                                            <span class="fu">max</span>(df2<span class="sc">$</span>year_sc),</span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a>                                            <span class="at">length.out =</span> <span class="fu">length</span>(<span class="fu">unique</span>(df2<span class="sc">$</span>year))))</span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a>nd_Mod_test <span class="ot">&lt;-</span> nd_Mod_test <span class="sc">|&gt;</span></span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">depth_sc =</span> <span class="dv">0</span>,</span>
+<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a>         <span class="at">year =</span> <span class="dv">1993</span>,</span>
+<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a>         <span class="at">d_sc =</span> <span class="dv">0</span>,</span>
+<span id="cb25-14"><a href="#cb25-14" aria-hidden="true" tabindex="-1"></a>         <span class="at">end_sc =</span> <span class="dv">0</span>,</span>
+<span id="cb25-15"><a href="#cb25-15" aria-hidden="true" tabindex="-1"></a>         <span class="at">ens_sc =</span> <span class="dv">0</span>,</span>
+<span id="cb25-16"><a href="#cb25-16" aria-hidden="true" tabindex="-1"></a>         <span class="at">ent_sc =</span> <span class="dv">0</span>,</span>
+<span id="cb25-17"><a href="#cb25-17" aria-hidden="true" tabindex="-1"></a>         <span class="at">eno_sc =</span> <span class="dv">0</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>filter: removed 150,223 rows (&gt;99%), 310 rows remaining</code></pre>
+<pre><code>mutate: new variable &#39;depth_sc&#39; (double) with one unique value and 0% NA
+        new variable &#39;year&#39; (double) with one unique value and 0% NA
+        new variable &#39;d_sc&#39; (double) with one unique value and 0% NA
+        new variable &#39;end_sc&#39; (double) with one unique value and 0% NA
+        new variable &#39;ens_sc&#39; (double) with one unique value and 0% NA
+        new variable &#39;ent_sc&#39; (double) with one unique value and 0% NA
+        new variable &#39;eno_sc&#39; (double) with one unique value and 0% NA</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>time <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>()</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>pred <span class="ot">&lt;-</span> <span class="fu">predict</span>(Mod_smooth_s, <span class="at">newdata =</span> nd_Mod_test, <span class="at">re_form =</span> <span class="cn">NA</span>)</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a><span class="fu">Sys.time</span>() <span class="sc">-</span> time</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Time difference of 3.621105 mins</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="fu">format</span>(<span class="fu">object.size</span>(pred), <span class="at">units =</span> <span class="st">&quot;auto&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] &quot;434.7 Kb&quot;</code></pre>
+</div>
+</div>
+</section>
+<section id="try-fit-the-same-model-using-a-t2-smooth." class="level1">
+<h1>try fit the same model using a t2() smooth.</h1>
+<div class="cell" data-layout-align="center" data-hash="QDisc-compare-smooth-prey_group_cache/html/fit t2_5f79bec89d51604f0c80f6520acb6652">
+<div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>time <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>()</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>  p2<span class="ot">&lt;-</span><span class="fu">profmem</span>({</span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>  Mod_smooth_t2 <span class="ot">&lt;-</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sdmTMB</span>(</span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> df2,</span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">mesh =</span> mesh_long,</span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">formula =</span> val_cube <span class="sc">~</span> <span class="dv">0</span> <span class="sc">+</span></span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>      prey_group_f <span class="sc">+</span></span>
+<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a>      <span class="fu">t2</span>(p_length_sc, year_sc, <span class="at">by =</span> prey_group_f, <span class="at">k=</span><span class="fu">c</span>(<span class="dv">4</span>,<span class="dv">10</span>)) <span class="sc">+</span></span>
+<span id="cb31-10"><a href="#cb31-10" aria-hidden="true" tabindex="-1"></a>      <span class="fu">s</span>(d_sc, <span class="at">bs =</span> <span class="st">&quot;cc&quot;</span>) <span class="sc">+</span></span>
+<span id="cb31-11"><a href="#cb31-11" aria-hidden="true" tabindex="-1"></a>      end_sc <span class="sc">+</span></span>
+<span id="cb31-12"><a href="#cb31-12" aria-hidden="true" tabindex="-1"></a>      ens_sc <span class="sc">+</span></span>
+<span id="cb31-13"><a href="#cb31-13" aria-hidden="true" tabindex="-1"></a>      ent_sc <span class="sc">+</span></span>
+<span id="cb31-14"><a href="#cb31-14" aria-hidden="true" tabindex="-1"></a>      eno_sc,</span>
+<span id="cb31-15"><a href="#cb31-15" aria-hidden="true" tabindex="-1"></a>    <span class="co">#time = &quot;year&quot;,</span></span>
+<span id="cb31-16"><a href="#cb31-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">extra_time =</span> missing_years,</span>
+<span id="cb31-17"><a href="#cb31-17" aria-hidden="true" tabindex="-1"></a>    <span class="at">spatial =</span> <span class="st">&quot;off&quot;</span>,</span>
+<span id="cb31-18"><a href="#cb31-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">spatiotemporal =</span> <span class="st">&quot;off&quot;</span>,</span>
+<span id="cb31-19"><a href="#cb31-19" aria-hidden="true" tabindex="-1"></a>    <span class="co"># spatiotemporal = &quot;iid&quot;,</span></span>
+<span id="cb31-20"><a href="#cb31-20" aria-hidden="true" tabindex="-1"></a>    <span class="co"># spatial_varying = ~ 0 + prey_group_f,</span></span>
+<span id="cb31-21"><a href="#cb31-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">family =</span> <span class="fu">delta_lognormal</span>(<span class="at">type =</span> <span class="st">&quot;poisson-link&quot;</span>)</span>
+<span id="cb31-22"><a href="#cb31-22" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb31-23"><a href="#cb31-23" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb31-24"><a href="#cb31-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">Sys.time</span>() <span class="sc">-</span> time</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Time difference of 1.520594 hours</code></pre>
+</div>
+</div>
+<p>Getting a model with the t2() smoother to fit is harder than with s(), also memory use is larger, fitting time longer.</p>
+<div class="cell" data-layout-align="center" data-hash="QDisc-compare-smooth-prey_group_cache/html/check t2_bb58cda8579b6da10e9ee0d79b8023ce">
+<div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>p2 <span class="sc">|&gt;</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(bytes <span class="sc">&gt;</span> <span class="dv">10000000</span>) <span class="sc">|&gt;</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(<span class="sc">-</span>bytes)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>filter: removed 160,988 rows (&gt;99%), 310 rows remaining</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>Rprofmem memory profiling of:
@@ -4464,55 +4511,17 @@ total       9371745600
 310                                                                                                                                                          sdmTMB() -&gt; &lt;Anonymous&gt; -&gt; getParameterOrder()
 total                                                                                                                                                                                                      </code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">total</span>(p2)<span class="sc">/</span><span class="dv">10</span><span class="sc">^</span><span class="dv">9</span> <span class="co"># gig</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">total</span>(p2)<span class="sc">/</span><span class="dv">10</span><span class="sc">^</span><span class="dv">9</span> <span class="co"># gig</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 13.01353</code></pre>
+<pre><code>[1] 13.13391</code></pre>
 </div>
-<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ifelse</span>(<span class="fu">exists</span>(<span class="st">&quot;Mod_smooth_t2&quot;</span>), <span class="fu">sanity</span>(Mod_smooth_t2), <span class="st">&quot;no fit&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] &quot;no fit&quot;</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ifelse</span>(<span class="fu">exists</span>(<span class="st">&quot;Mod_smooth_t2&quot;</span>), Mod_smooth_t2, <span class="st">&quot;no fit&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ifelse</span>(<span class="fu">exists</span>(<span class="st">&quot;Mod_smooth_t2&quot;</span>), <span class="fu">sanity</span>(Mod_smooth_t2), <span class="st">&quot;no fit&quot;</span>) <span class="co"># use ifelse exists when rendering and fitting may not be successful.</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] &quot;no fit&quot;</code></pre>
 </div>
-</div>
-<div class="cell" data-layout-align="center" data-hash="QDisc-compare-smooth-prey_group_cache/html/predict_6fad5faf4f7f9ea8d9f73f53d5d13501">
-<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="co"># predict on data</span></span>
-<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>nd_Mod_test <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(<span class="st">&quot;p_length_sc&quot;</span> <span class="ot">=</span> <span class="fu">seq</span>(<span class="fu">min</span>(df2<span class="sc">$</span>p_length_sc),</span>
-<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>                                                  <span class="fu">max</span>(df2<span class="sc">$</span>p_length_sc),</span>
-<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>                                                  <span class="at">length.out =</span><span class="dv">30</span>),</span>
-<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>                            <span class="st">&quot;prey_group_f&quot;</span> <span class="ot">=</span> <span class="fu">levels</span>(df2<span class="sc">$</span>prey_group_f),</span>
-<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a>                            <span class="st">&quot;year_sc&quot;</span> <span class="ot">=</span> <span class="fu">seq</span>(<span class="fu">min</span>(df2<span class="sc">$</span>year_sc),</span>
-<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a>                                            <span class="fu">max</span>(df2<span class="sc">$</span>year_sc),</span>
-<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>                                            <span class="at">length.out =</span> <span class="fu">length</span>(<span class="fu">unique</span>(df2<span class="sc">$</span>year))))</span>
-<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a>nd_Mod_test <span class="ot">&lt;-</span> nd_Mod_test <span class="sc">|&gt;</span></span>
-<span id="cb36-11"><a href="#cb36-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">depth_sc =</span> <span class="dv">0</span>,</span>
-<span id="cb36-12"><a href="#cb36-12" aria-hidden="true" tabindex="-1"></a>         <span class="at">year =</span> <span class="dv">1993</span>,</span>
-<span id="cb36-13"><a href="#cb36-13" aria-hidden="true" tabindex="-1"></a>         <span class="at">d_sc =</span> <span class="dv">0</span>,</span>
-<span id="cb36-14"><a href="#cb36-14" aria-hidden="true" tabindex="-1"></a>         <span class="at">end_sc =</span> <span class="dv">0</span>,</span>
-<span id="cb36-15"><a href="#cb36-15" aria-hidden="true" tabindex="-1"></a>         <span class="at">ens_sc =</span> <span class="dv">0</span>,</span>
-<span id="cb36-16"><a href="#cb36-16" aria-hidden="true" tabindex="-1"></a>         <span class="at">ent_sc =</span> <span class="dv">0</span>,</span>
-<span id="cb36-17"><a href="#cb36-17" aria-hidden="true" tabindex="-1"></a>         <span class="at">eno_sc =</span> <span class="dv">0</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stderr">
-<pre><code>mutate: new variable &#39;depth_sc&#39; (double) with one unique value and 0% NA
-        new variable &#39;year&#39; (double) with one unique value and 0% NA
-        new variable &#39;d_sc&#39; (double) with one unique value and 0% NA
-        new variable &#39;end_sc&#39; (double) with one unique value and 0% NA
-        new variable &#39;ens_sc&#39; (double) with one unique value and 0% NA
-        new variable &#39;ent_sc&#39; (double) with one unique value and 0% NA
-        new variable &#39;eno_sc&#39; (double) with one unique value and 0% NA</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>time <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>()</span>
-<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>pred <span class="ot">&lt;-</span> <span class="fu">predict</span>(Mod_smooth_s, <span class="at">newdata =</span> nd_Mod_test, <span class="at">re_form =</span> <span class="cn">NA</span>)</span>
-<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a><span class="fu">Sys.time</span>() <span class="sc">-</span> time</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ifelse</span>(<span class="fu">exists</span>(<span class="st">&quot;Mod_smooth_t2&quot;</span>), Mod_smooth_t2, <span class="st">&quot;no fit&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>Time difference of 28.06029 mins</code></pre>
-</div>
-<div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">format</span>(<span class="fu">object.size</span>(pred), <span class="at">units =</span> <span class="st">&quot;auto&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] &quot;434.7 Kb&quot;</code></pre>
+<pre><code>[1] &quot;no fit&quot;</code></pre>
 </div>
 </div>
 </section>

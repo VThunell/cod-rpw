@@ -51,8 +51,8 @@ home <- here::here()
 #| warning: false
 #| cache: false
 
-df <- read.csv(paste0(home, "/data/stomach/ran_rpwg_long.csv"))
-#df <- read.csv(paste0(home, "/Data_rpwg_long.csv"))
+#df <- read.csv(paste0(home, "/data/stomach/ran_rpwg_long.csv"))
+df <- read.csv(paste0(home, "/QsdmTMB_dforum/Data_rpwg_long.csv"))
 
 glimpse(df)
 
@@ -72,7 +72,9 @@ df2 |>
 
 # Fit and check model
 
-I´m excluding spatial and spatiotemporal random effects to prevent R from crashing (see my original spatial   spatiotemporal commented out)
+The number of observations are reduced to make them possible to work with (fitting and predicting). The data is not the original data as it is unpublished and has thus been altered. 
+
+I´m excluding spatial and spatiotemporal random effects to prevent R from crashing (see my original spatial and spatiotemporal commented out). Contact me if you want ot try reproduce R crashing. 
 
 ```{r fit s}
 #make mesh
@@ -114,6 +116,7 @@ Mod_smooth_s <-
 Sys.time() - time
 ```
 
+The largest contribution to memory use is fitting smoothers.  
 
 ```{r check}
 p |>
@@ -121,52 +124,14 @@ p |>
   arrange(-bytes)
 total(p)/10^9 # gig
 
-ifelse(exists("Mod_smooth_s"), sanity(Mod_smooth_s), "no fit") 
+ifelse(exists("Mod_smooth_s"), sanity(Mod_smooth_s), "no fit")  # use ifelse exists when rendering and fitting may not be successful.
 
 Mod_smooth_s
-#ifelse(exists("Mod_smooth_1"), AIC(Mod_smooth_1), "no fit")
-# Mod_1_res <- sdmTMBextra::predict_mle_mcmc(Mod_smooth_1, mcmc_warmup = 150, mcmc_iter = 151)
-# qqnorm(residuals(Mod_smooth_1, "mle-mcmc", mcmc_samples = Mod_1_res)) # good
-# qqline(residuals(Mod_smooth_1, "mle-mcmc", mcmc_samples = Mod_1_res))
 
 ```
 
-```{r fit t2}
 
-time <- Sys.time()
-  p2<-profmem({
-  Mod_smooth_t2 <-
-    sdmTMB(
-    data = df2,
-    mesh = mesh_long,
-    formula = val_cube ~ 0 +
-      prey_group_f +
-      t2(p_length_sc, year_sc, by = prey_group_f, k=c(4,10)) +
-      s(d_sc, bs = "cc") +
-      end_sc +
-      ens_sc +
-      ent_sc +
-      eno_sc,
-    #time = "year",
-    extra_time = missing_years,
-    spatial = "off",
-    spatiotemporal = "off",
-    # spatiotemporal = "iid",
-    # spatial_varying = ~ 0 + prey_group_f,
-    family = delta_lognormal(type = "poisson-link")
-  )
-  })
-  Sys.time() - time
-# 
-p2 |>
-  filter(bytes > 10000000) |>
-  arrange(-bytes)
-total(p2)/10^9 # gig
-
-ifelse(exists("Mod_smooth_t2"), sanity(Mod_smooth_t2), "no fit")
-ifelse(exists("Mod_smooth_t2"), Mod_smooth_t2, "no fit")
-
-```
+I can make predictions as the data is a subset (146 000) of the original 430 000 observations. 
 
 ```{r predict}
 # predict on data
@@ -192,6 +157,48 @@ pred <- predict(Mod_smooth_s, newdata = nd_Mod_test, re_form = NA)
 Sys.time() - time
 
 format(object.size(pred), units = "auto")
+
+```
+
+# try fit the same model using a t2() smooth.
+```{r fit t2}
+time <- Sys.time()
+  p2<-profmem({
+  Mod_smooth_t2 <-
+    sdmTMB(
+    data = df2,
+    mesh = mesh_long,
+    formula = val_cube ~ 0 +
+      prey_group_f +
+      t2(p_length_sc, year_sc, by = prey_group_f, k=c(4,10)) +
+      s(d_sc, bs = "cc") +
+      end_sc +
+      ens_sc +
+      ent_sc +
+      eno_sc,
+    #time = "year",
+    extra_time = missing_years,
+    spatial = "off",
+    spatiotemporal = "off",
+    # spatiotemporal = "iid",
+    # spatial_varying = ~ 0 + prey_group_f,
+    family = delta_lognormal(type = "poisson-link")
+  )
+  })
+  Sys.time() - time
+```
+
+Getting a model with the t2() smoother to fit is harder than with s(), also memory use is larger, fitting time longer. 
+
+```{r check t2}
+p2 |>
+  filter(bytes > 10000000) |>
+  arrange(-bytes)
+total(p2)/10^9 # gig
+
+ifelse(exists("Mod_smooth_t2"), sanity(Mod_smooth_t2), "no fit") # use ifelse exists when rendering and fitting may not be successful.
+ifelse(exists("Mod_smooth_t2"), Mod_smooth_t2, "no fit")
+
 
 ```
 
