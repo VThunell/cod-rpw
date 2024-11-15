@@ -11,12 +11,6 @@
 # Example code in package build process
 *-Ex.R
 
-# Output files from R CMD build
-/*.tar.gz
-
-# Output files from R CMD check
-/*.Rcheck/
-
 # RStudio files
 .Rproj.user/
 
@@ -44,18 +38,7 @@ vignettes/*.pdf
 **.log
 
 # Data
-data/DATRAS-exchange/
-data/from-ale/
-data/depth-geo_tif
-data/gear-standardization/
-data/ICES-StatRec-mapto-ICES-Areas/
-data/NEMO
-data/nemo_copernicus.png
-data/substrate-tif/
-data/saduria-tif/
-data/clean/catch_by_length.csv
-data/bias
-data/Mean depth natural colour (with land).nc
+/data
 
 # Reports
 WKSPATIAL - Report of the Workshop on Spatial Analyses for the Baltic Sea_2015.pdf
