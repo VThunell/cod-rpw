@@ -51,12 +51,8 @@ output/
 # Decktape
 decktape/
 
-# Data
 # Old exploratory stuff
-*/old
+/old
 
 # Supp figures
 figures/supp/cpue_oxygen_rasters/
-
-# Meetings
-meetings/
