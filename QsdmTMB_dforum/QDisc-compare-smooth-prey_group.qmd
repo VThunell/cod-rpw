@@ -1,0 +1,197 @@
+---
+title: "Compare smmother fits for prey weight by prey group"
+author: "Viktor Thunell"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: 
+  html:
+    page-layout: full
+    embed-resources: true
+knitr: 
+  opts_chunk:
+    fig.align: center
+    out-width: 80%
+editor: source
+execute: 
+  echo: true
+  eval: true
+  cache: true
+---
+
+## Load libraries
+
+```{r libs}
+#| message: false
+#| warning: false
+#| cache: false
+
+# Load libraries, install if needed
+pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "sdmTMBextra", "terra", "mapplots",
+          "viridis", "modelr", "beepr", "profmem") 
+
+if(length(setdiff(pkgs,rownames(installed.packages()))) > 0){
+
+    install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
+  
+  }
+
+invisible(lapply(pkgs, library, character.only = T))
+
+library(ggsidekick)
+theme_set(theme_sleek())
+
+# Set path
+home <- here::here()
+```
+
+
+## Read stomach data
+
+```{r}
+#| message: false
+#| warning: false
+#| cache: false
+
+df <- read.csv(paste0(home, "/data/stomach/ran_rpwg_long.csv"))
+#df <- read.csv(paste0(home, "/Data_rpwg_long.csv"))
+
+glimpse(df)
+
+df2 <- df |>
+  mutate(prey_group_f = as.factor(prey_group),
+         val_cube = value^(1/3)) |>
+  filter(between(year, 1985, 2015)) ##|> # reduce #obs by selecting years to make it possible to fit and predict models
+
+df2 |>
+  summarise(mean = mean(value), .by = c(year, prey_group)) |>
+  ggplot(aes(year, mean, color = prey_group)) +
+  geom_line() +
+  facet_wrap(~prey_group) +
+  expand_limits(x=c(1960,2020))
+
+```
+
+# Fit and check model
+
+I´m excluding spatial and spatiotemporal random effects to prevent R from crashing (see my original spatial   spatiotemporal commented out)
+
+```{r fit s}
+#make mesh
+mesh_long <- make_mesh(df2, c("X", "Y"), cutoff = 25)
+plot(mesh_long)
+
+# missing years
+my <- min(df2$year):max(df2$year)
+missing_years <- my[!my %in% unique(df2$year)]
+
+# https://cran.r-project.org/web/packages/profmem/vignettes/profmem.html#:~:text=The%20profmem()%20function%20of,consumes%20more%20memory%20than%20expected.
+capabilities("profmem")
+#options(profmem.threshold = 300000)
+#options(max.print=10000)
+
+time <- Sys.time()
+p <- profmem({
+Mod_smooth_s <-
+  sdmTMB(
+  data = df2,
+  mesh = mesh_long,
+  formula = val_cube ~ 0 +
+    prey_group_f +
+    s(p_length_sc, year_sc, by = prey_group_f) + 
+    s(d_sc, bs = "cc") +
+    end_sc +
+    ens_sc +
+    ent_sc +
+    eno_sc,
+  extra_time = missing_years,
+  spatial = "off",
+  spatiotemporal = "off",
+  # spatiotemporal = "iid",
+  # spatial_varying = ~ 0 + prey_group_f,
+  family = delta_lognormal(type = "poisson-link")
+)
+})
+
+Sys.time() - time
+```
+
+
+```{r check}
+p |>
+  filter(bytes > 5000000) |>
+  arrange(-bytes)
+total(p)/10^9 # gig
+
+ifelse(exists("Mod_smooth_s"), sanity(Mod_smooth_s), "no fit") 
+
+Mod_smooth_s
+#ifelse(exists("Mod_smooth_1"), AIC(Mod_smooth_1), "no fit")
+# Mod_1_res <- sdmTMBextra::predict_mle_mcmc(Mod_smooth_1, mcmc_warmup = 150, mcmc_iter = 151)
+# qqnorm(residuals(Mod_smooth_1, "mle-mcmc", mcmc_samples = Mod_1_res)) # good
+# qqline(residuals(Mod_smooth_1, "mle-mcmc", mcmc_samples = Mod_1_res))
+
+```
+
+```{r fit t2}
+
+time <- Sys.time()
+  p2<-profmem({
+  Mod_smooth_t2 <-
+    sdmTMB(
+    data = df2,
+    mesh = mesh_long,
+    formula = val_cube ~ 0 +
+      prey_group_f +
+      t2(p_length_sc, year_sc, by = prey_group_f, k=c(4,10)) +
+      s(d_sc, bs = "cc") +
+      end_sc +
+      ens_sc +
+      ent_sc +
+      eno_sc,
+    #time = "year",
+    extra_time = missing_years,
+    spatial = "off",
+    spatiotemporal = "off",
+    # spatiotemporal = "iid",
+    # spatial_varying = ~ 0 + prey_group_f,
+    family = delta_lognormal(type = "poisson-link")
+  )
+  })
+  Sys.time() - time
+# 
+p2 |>
+  filter(bytes > 10000000) |>
+  arrange(-bytes)
+total(p2)/10^9 # gig
+
+ifelse(exists("Mod_smooth_t2"), sanity(Mod_smooth_t2), "no fit")
+ifelse(exists("Mod_smooth_t2"), Mod_smooth_t2, "no fit")
+
+```
+
+```{r predict}
+# predict on data
+nd_Mod_test <- expand.grid("p_length_sc" = seq(min(df2$p_length_sc),
+                                                  max(df2$p_length_sc),
+                                                  length.out =30),
+                            "prey_group_f" = levels(df2$prey_group_f),
+                            "year_sc" = seq(min(df2$year_sc),
+                                            max(df2$year_sc),
+                                            length.out = length(unique(df2$year))))
+
+nd_Mod_test <- nd_Mod_test |>
+  mutate(depth_sc = 0,
+         year = 1993,
+         d_sc = 0,
+         end_sc = 0,
+         ens_sc = 0,
+         ent_sc = 0,
+         eno_sc = 0)
+
+time <- Sys.time()
+pred <- predict(Mod_smooth_s, newdata = nd_Mod_test, re_form = NA)
+Sys.time() - time
+
+format(object.size(pred), units = "auto")
+
+```
+
