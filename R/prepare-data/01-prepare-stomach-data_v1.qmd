@@ -1304,7 +1304,8 @@ old_db_data <- old_data |>
          data_source = "old_db")
 
 new_SE_data <- SE4_sum3 |>
-  filter(predator_latin_name %in% "Gadus morhua") |>
+  filter(str_detect(pred_id, "COD")) |>
+  #filter(predator_latin_name %in% "Gadus morhua") |>
   rename(pred_ID = pred_id,
          Haul_ID = haul_id,
          Year = year,
@@ -1617,7 +1618,7 @@ df <- all_data7 |>
          month = Month,
          day = Day) |> 
   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) |> 
-  dplyr::select(pred_ID, herring, saduria, sprat, other, other_inverts, other_chords, rpw_tot, rpw_tot_fb, rpw_sad, rpw_spr, rpw_her, rpw_other, rpw_other_inverts, rpw_other_chords, year, month, day, day_of_year, pred_weight, pred_weight_fb, pred_length, pred_weight_source, lat, lon, ices_rect, X, Y, data_source, Country, Depth)
+  dplyr::select(pred_ID, Haul_ID, herring, saduria, sprat, other, other_inverts, other_chords, rpw_tot, rpw_tot_fb, rpw_sad, rpw_spr, rpw_her, rpw_other, rpw_other_inverts, rpw_other_chords, year, month, day, day_of_year, pred_weight, pred_weight_fb, pred_length, pred_weight_source, lat, lon, ices_rect, X, Y, data_source, Country, Depth)
 
 
 # Add sample size per coordinate for plotting
@@ -1642,4 +1643,6 @@ ggsave(paste0(home, "/figures/supp/year_diet_map.pdf"), width = 15, height = 15,
 
 ```{r Save}
 # Save data
-write_csv(df, paste0(home, "/data/stomach/stomachs_v1.csv")) # ```
+write_csv(df, paste0(home, "/data/stomach/stomachs_v1.csv")) # 
+
+```
