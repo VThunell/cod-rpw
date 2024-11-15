@@ -8,15 +8,8 @@
 # User-specific files
 .Ruserdata
 
-# Example code in package build process
-*-Ex.R
-
 # RStudio files
 .Rproj.user/
-
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
 
 # OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
 .httr-oauth
@@ -38,21 +31,10 @@ vignettes/*.pdf
 **.log
 
 # Data
-/data
-
-# Reports
-WKSPATIAL - Report of the Workshop on Spatial Analyses for the Baltic Sea_2015.pdf
-ecog12909-sup-0001-appendixs1.docx
-SC10 Foodwebs - Final report_for submission_CLEAN - Authors added.pdf
-
-# Output
-output/
-
-# Decktape
-decktape/
+data/
 
 # Old exploratory stuff
-/old
+old/
 
-# Supp figures
-figures/supp/cpue_oxygen_rasters/
+# Related but not used 
+/0X-prepare-stomach-data-length.qmd
