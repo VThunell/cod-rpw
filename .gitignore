@@ -30,7 +30,7 @@
 **/.DS_Store
 **.log
 
-# Data
+# Data directory
 data/
 
 # Old exploratory stuff
