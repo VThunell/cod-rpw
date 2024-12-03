@@ -313,48 +313,54 @@ plot_map_fc +
 
 ## Add cod densities, only for post 1992!
 ```{r add cod density}
-# for the Mod, the fr data is instead used to scale the prediction grid
-data_stats <- read_csv(paste0(home, "/data/survey/data_stats.csv")) 
-m3 <- readRDS(paste0(home, file = "/data/survey/m3.rds"))
+# # for the Mod, the fr data is instead used to scale the prediction grid
+# data_stats <- read_csv(paste0(home, "/data/survey/data_stats.csv")) 
+# m3 <- readRDS(paste0(home, file = "/data/survey/m3.rds"))
 
-# d_stats is used to scale the prediction grid when predictiong cod densities
-data_stats_st <- data_stats |>
-  summarise(depth_mean = mean(depth, na.omit = TRUE),
-            depth_sd = sd(depth),
-            sal_mean = mean(sal, na.omit = TRUE),
-            sal_sd = sd(sal),
-            oxy_mean = mean(oxy, na.omit = TRUE),
-            oxy_sd = sd(oxy),
-            temp_mean = mean(temp, na.omit = TRUE),
-            temp_sd = sd(temp))
+# REFIT THIS MODEL IF USING COD DENSITIES
 
-df_m3 <- pred_grid_tmp3 |>
-  filter(between(year, 1993, 2021)) |>
-  drop_na(oxy,
-          sal,
-          temp) |>
-  mutate(depth = ifelse(depth < 0, 0, depth),
-         depth_sc = (depth - data_stats_st$depth_mean)/data_stats_st$depth_sd,
-         oxy_sc = (oxy - data_stats_st$oxy_mean)/data_stats_st$oxy_sd,
-         sal_sc = (sal - data_stats_st$sal_mean)/data_stats_st$sal_sd,
-         temp_sc = (temp - data_stats_st$temp_mean)/data_stats_st$temp_sd,
-         depth_sq = depth_sc^2,
-         temp_sq = temp_sc^2,
-         year_f = as.factor(year),
-         quarter_f = as.factor(1))
-
-# Predict cod cpue density with model model from Max  
-cpue_cod <- predict(m3, newdata = df_m3) |>
-  mutate(log_density_cod = est) |>
-  dplyr::select(lat, lon, month, year, log_density_cod) 
-
-pred_grid_tmp4 <- pred_grid_tmp3 |>
-  left_join(cpue_cod, by = c("month", "year", "lon", "lat"))
+# # This model was fit with an older version of sdmTMB before internal
+# #  handling of `extra_time` was simplified. Please refit your model before
+# #  predicting on it (or install version 0.5.0 or 0.5.0.9000).
+# # d_stats is used to scale the prediction grid when predictiong cod densities
+# data_stats_st <- data_stats |>
+#   summarise(depth_mean = mean(depth, na.omit = TRUE),
+#             depth_sd = sd(depth),
+#             sal_mean = mean(sal, na.omit = TRUE),
+#             sal_sd = sd(sal),
+#             oxy_mean = mean(oxy, na.omit = TRUE),
+#             oxy_sd = sd(oxy),
+#             temp_mean = mean(temp, na.omit = TRUE),
+#             temp_sd = sd(temp))
+# 
+# df_m3 <- pred_grid_tmp3 |>
+#   filter(between(year, 1993, 2021)) |>
+#   drop_na(oxy,
+#           sal,
+#           temp) |>
+#   mutate(depth = ifelse(depth < 0, 0, depth),
+#          depth_sc = (depth - data_stats_st$depth_mean)/data_stats_st$depth_sd,
+#          oxy_sc = (oxy - data_stats_st$oxy_mean)/data_stats_st$oxy_sd,
+#          sal_sc = (sal - data_stats_st$sal_mean)/data_stats_st$sal_sd,
+#          temp_sc = (temp - data_stats_st$temp_mean)/data_stats_st$temp_sd,
+#          depth_sq = depth_sc^2,
+#          temp_sq = temp_sc^2,
+#          year_f = as.factor(year),
+#          quarter_f = as.factor(1))
+# 
+# # Predict cod cpue density with model model from Max  
+# cpue_cod <- predict(m3, newdata = df_m3) |>
+#   mutate(log_density_cod = est) |>
+#   dplyr::select(lat, lon, month, year, log_density_cod) 
+# 
+# pred_grid_tmp4 <- pred_grid_tmp3 |>
+#   left_join(cpue_cod, by = c("month", "year", "lon", "lat"))
 
 ```
 
 ## Add ICES areas
 ```{r ices areas}
+pred_grid_tmp4 <- pred_grid_tmp3
 # https://stackoverflow.com/questions/34272309/extract-shapefile-value-to-point-with-r
 # https://gis.ices.dk/sf/
 shape <- shapefile(paste0(home, "/data/survey/ICES_StatRec_mapto_ICES_Areas/StatRec_map_Areas_Full_20170124.shp"))
@@ -417,11 +423,11 @@ plot_map +
   facet_wrap(~year) +
   scale_fill_viridis() # 1996 and 2006 was cold years
 
-# cod density
-plot_map +
-  geom_tile(data = pred_grid_done |> filter(between(year, 1993,2021)) |> mutate(decade = round(year/10) * 10), aes(X*1000, Y*1000, fill = exp(log_density_cod))) +
-  scale_fill_viridis(trans = "sqrt") +
-facet_wrap(~decade)
+# # cod density
+# plot_map +
+#   geom_tile(data = pred_grid_done |> filter(between(year, 1993,2021)) |> mutate(decade = round(year/10) * 10), aes(X*1000, Y*1000, fill = exp(log_density_cod))) +
+#   scale_fill_viridis(trans = "sqrt") +
+# facet_wrap(~decade)
 
 
 ```
