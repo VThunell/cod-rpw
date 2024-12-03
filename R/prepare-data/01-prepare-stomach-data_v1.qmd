@@ -177,7 +177,7 @@ From all unique prey AphiaIDs and Scientific names in the different databases we
 
 ### Get taxonomy 
 ```{r taxonomy}
-# pick columns with species related info all datasets
+# # pick columns with species related info all datasets
 # str(prey) # only AphiaIDPrey
 # str(ODB) # Prey_AphiaID and Prey_LatinName
 # str(SE) # prey_latin_name
@@ -1183,7 +1183,7 @@ missing_db10_sum2 <- missing_db10_sum |>
   pivot_wider( id_cols = c(Country,Estimated_Lat_Lon,ICESrectangle,Year,Month,Day,pred_weight,pred_length,Haul_ID,lat,lon,pred_ID,Depth), names_from = "prey_group", values_from = "prey_tot_weight", values_fill = 0)
 
 # no duplicates 
-missing_db10_sum2 |> group_by(pred_ID) |> filter(n()>1)
+missing_db10_sum2 |> summarise(count = n(), .by = pred_ID) |> filter(count > 1)
 
 # Split unidentified clupeids on sprat and herring  
 missing_db10_sum3 <- missing_db10_sum2 |> 
@@ -1329,17 +1329,17 @@ bind_rows( new_db_data |> dplyr::select(Year, pred_ID, data_source),
 
 
 # Check if any of the two datasets have NA in the common columns. 
-unique(is.na(old_db_data |> dplyr::select(all_of(comcol_all_data_pred)))) # Depth is all NAs but we dont need it. Day we may need however and these stomachs need to be removed in case day is a predictor. COnsider also when adding in environmental data. 
+unique(is.na(old_db_data |> dplyr::select(all_of(comcol_all_data_pred)))) # Depth is all NAs but we dont need it. Day we may need however and these stomachs need to be removed in case day is a predictor. Consider also when adding in environmental data. 
 unique(is.na(new_db_data |> dplyr::select(all_of(comcol_all_data_pred))))
 unique(is.na(new_SE_data |> dplyr::select(all_of(comcol_all_data_pred))))
 
 str(old_db_data)
 str(new_db_data)
-# remove Time, Depth, HaulNo and Ship (ship makes w-o columns .x and .y)
+# remove Time, Depth and Ship (ship makes w-o columns .x and .y)
 all_data <- full_join( old_db_data |> dplyr::select(-c(Depth)), # join in predator data
-                       new_db_data |> dplyr::select(-c(Depth, HaulNo, Ship)),
-                       by = comcol_all_data_pred[!comcol_all_data_pred %in% c("Depth","HaulNo","Ship")])  |>
-  full_join(new_SE_data, by = comcol_all_data_pred[!comcol_all_data_pred %in% c("Depth","HaulNo","Ship")] )
+                       new_db_data |> dplyr::select(-c(Depth, Ship)),
+                       by = comcol_all_data_pred[!comcol_all_data_pred %in% c("Depth","Ship")])  |>
+  full_join(new_SE_data, by = comcol_all_data_pred[!comcol_all_data_pred %in% c("Depth","Ship")] )
 
 ```
 
@@ -1358,24 +1358,16 @@ all_data2 <- all_data |>
 all_data2 |> 
   summarise(percobs = n() / nrow(all_data2) * 100, .by = pred_weight_source)
 
-# load BITS data (parsing issues because sd is not double)
-# problems(read_csv(paste0(home, "/data/survey/lw_data.csv")))
-lw_data_bits <- read_csv(paste0(home, "/data/survey/lw_data.csv"), 
-                         col_types = list(
-                           Year = col_double(),
-                           SD = col_character(),
-                           LngtCm  = col_double(),
-                           IndWgt = col_double(),
-                           lon  = col_double(),
-                           lat  = col_double(),
-                           species = col_character()))
-
+# load BITS data
+lw_data_bits <- read_csv(paste0(home, "/data/survey/historical_lw_data.csv")) 
+                         
 # combine bits with stomach data on lw
 lw_data_stombits <- lw_data_bits |>
   filter(species == "cod") |>
-  dplyr::select(Year,LngtCm,IndWgt) |>
-  rename(pred_length = LngtCm,
-         pred_weight = IndWgt) |>
+  dplyr::select(year,lngt_cm,ind_wgt) |>
+  rename(Year = year,
+         pred_length = lngt_cm,
+         pred_weight = ind_wgt) |>
   bind_rows( all_data2 |> filter(pred_weight_source == "observed") |> dplyr::select(Year, pred_weight, pred_length))
 
 # fit yearly lm models
@@ -1386,7 +1378,8 @@ ebc_yearly_lw <- lw_data_stombits |>
   rename(a = '(Intercept)',
          b = 'log(pred_length)') |>
   mutate(a = exp(a),
-         b = b)
+         b = b) |>
+  ungroup()
 
 # plot a and b over time
 ebc_yearly_lw |>
@@ -1408,11 +1401,8 @@ bgam <- gam(b ~ s(Year),
             data = ebc_yearly_lw,
             family = gaussian())
 #predict
-apred <- predict_gam(agam, length_out = length(unique(ebc_yearly_lw$Year))) |>
-  mutate(Year=round(Year))
-
-bpred <- predict_gam(bgam, length_out = length(unique(ebc_yearly_lw$Year))) |>
-  mutate(Year=round(Year))
+apred <- predict_gam(agam, values = data.frame( Year = unique(ebc_yearly_lw$Year)))
+bpred <- predict_gam(bgam,  values = data.frame( Year = unique(ebc_yearly_lw$Year)))
 
 # combine to plot
 abpred <- bind_rows(apred |> rename(est=a) |> mutate(coeff= "a"), bpred |> rename(est=b) |> mutate(coeff= "b"))
@@ -1425,13 +1415,14 @@ abpred |>
   geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci, x=Year), color = NA, alpha = 0.3) +
   facet_wrap(~coeff, scales = "free") +
   expand_limits(x=c(1960,2020)) +
-  labs("modelled gam smooth with a and b from linear model")
+  labs("modelled gam smooth with a and b from linear model, unsmooth pattern is due to predictions on exact year values I think")
 
 # join in a and b
 all_data3 <- all_data2 |>
   left_join(apred, join_by(Year)) |>
   left_join(bpred, join_by(Year)) 
 
+nrow(all_data3) - nrow(all_data2)
 # test the effect of using yearly a and bs insetad of mean general cods from fishbase 
 length_decade_ab <- expand.grid(length = 10:50, decade=seq(1960,2020, by=10)) |>
   left_join(apred |> mutate(decade = round(Year/10) * 10) |> ungroup() |> summarise(meana = mean(a), .by= c(decade))) |>
@@ -1639,6 +1630,14 @@ plot_map_fc +
   geom_sf()
 
 ggsave(paste0(home, "/figures/supp/year_diet_map.pdf"), width = 15, height = 15, units = "cm")
+```
+# check for duplicates
+```{r}
+# 547 dupes
+df |>
+  summarise(count = n(), .by = c(pred_ID, data_source, year, Country)) |>
+  filter(count > 1)
+
 ```
 
 ```{r Save}
