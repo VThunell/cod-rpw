@@ -1392,43 +1392,48 @@ ebc_yearly_lw |>
   expand_limits(x=c(1960,2020)) +
   labs("using a stat_smooth gam")
 
-# fit a gam for a and b to get smoothed predictions of a and b.
-agam <- gam(a ~ s(Year),
-            data = ebc_yearly_lw,
-            family = gaussian())
-
-bgam <- gam(b ~ s(Year),
-            data = ebc_yearly_lw,
-            family = gaussian())
-#predict
-apred <- predict_gam(agam, values = data.frame( Year = unique(ebc_yearly_lw$Year)))
-bpred <- predict_gam(bgam,  values = data.frame( Year = unique(ebc_yearly_lw$Year)))
+# IF USING GAM to smooth out the large variation between years.
+# # fit a gam for a and b to get smoothed predictions of a and b.
+# agam <- gam(a ~ s(Year),
+#             data = ebc_yearly_lw,
+#             family = gaussian())
+# 
+# bgam <- gam(b ~ s(Year),
+#             data = ebc_yearly_lw,
+#             family = gaussian())
+# #predict
+# apred <- predict_gam(agam, values = data.frame( Year = unique(ebc_yearly_lw$Year)))
+# bpred <- predict_gam(bgam,  values = data.frame( Year = unique(ebc_yearly_lw$Year)))
 
 # combine to plot
-abpred <- bind_rows(apred |> rename(est=a) |> mutate(coeff= "a"), bpred |> rename(est=b) |> mutate(coeff= "b"))
-
-abpred |>
-  ggplot() +
-  geom_line(aes(Year, est, color = coeff)) +
-  geom_point(data = ebc_yearly_lw |>  filter(a < 1) |>
-               pivot_longer(cols = c(a,b), names_to = "coeff", values_to = "value"), aes(Year, value, color= coeff)) +
-  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci, x=Year), color = NA, alpha = 0.3) +
-  facet_wrap(~coeff, scales = "free") +
-  expand_limits(x=c(1960,2020)) +
-  labs("modelled gam smooth with a and b from linear model, unsmooth pattern is due to predictions on exact year values I think")
-
+# abpred <- bind_rows(apred |> rename(est=a) |> mutate(coeff= "a"), bpred |> rename(est=b) |> mutate(coeff= #"b"))
+#
+# abpred |>
+#   ggplot() +
+#   geom_line(aes(Year, est, color = coeff)) +
+#   geom_point(data = ebc_yearly_lw |>  filter(a < 1) |>
+#                pivot_longer(cols = c(a,b), names_to = "coeff", values_to = "value"), aes(Year, value, color= coeff)) +
+#   geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci, x=Year), color = NA, alpha = 0.3) +
+#   facet_wrap(~coeff, scales = "free") +
+#   expand_limits(x=c(1960,2020)) +
+#   labs("modelled gam smooth with a and b from linear model, unsmooth pattern is due to predictions on exact year values I think")
+# 
 # join in a and b
+# all_data3 <- all_data2 |>
+#   left_join(apred, join_by(Year)) |>
+#   left_join(bpred, join_by(Year)) 
+# 
+# if not using gam to smooth variation in a a nd b between years
 all_data3 <- all_data2 |>
-  left_join(apred, join_by(Year)) |>
-  left_join(bpred, join_by(Year)) 
+  left_join(ebc_yearly_lw, join_by(Year))
 
 nrow(all_data3) - nrow(all_data2)
 # test the effect of using yearly a and bs insetad of mean general cods from fishbase 
 length_decade_ab <- expand.grid(length = 10:50, decade=seq(1960,2020, by=10)) |>
-  left_join(apred |> mutate(decade = round(Year/10) * 10) |> ungroup() |> summarise(meana = mean(a), .by= c(decade))) |>
-  left_join(bpred |> mutate(decade = round(Year/10) * 10) |> ungroup() |> summarise(meanb = mean(b), .by= c(decade))) |>
+  left_join(ebc_yearly_lw |> mutate(decade = round(Year/10) * 10) |> ungroup() |> summarise(meana = mean(a), .by= c(decade))) |>
+  left_join(ebc_yearly_lw |> mutate(decade = round(Year/10) * 10) |> ungroup() |> summarise(meanb = mean(b), .by= c(decade))) |>
   mutate(tvar_ab = meana*length^meanb,
-         fb_ab = 0.00712575*length^3.098685)
+         fb_ab = 0.00712575*length^3.098685) # mean cod fishbase a and b
 # plot
 length_decade_ab |>
   ggplot(aes(length, tvar_ab, color = factor(decade))) +
