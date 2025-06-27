@@ -54,7 +54,7 @@ home <- here::here()
 #| message: false
 #| warning: false
 
-dat <- read_csv(paste0(home, "/data/stomach/stomachs_v1.csv"))
+dat <- read_csv(paste0(home, "/data/stomach/stomachs_v2.csv"))
 
 glimpse(dat)
 ```

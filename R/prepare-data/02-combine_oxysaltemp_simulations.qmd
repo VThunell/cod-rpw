@@ -69,7 +69,7 @@ netcdf files often has has lat and long as dimensions covering space (and someim
 # path <- paste0(home, "/data/hindcastRunToSLU/20240701_DataDelivery_SMHI_SLU")
 # filepaths <- list.files(path, full.names=TRUE)
 # 
-# # turn filepath name ending into corresponding year and moth and check if any years do not contain 12 months
+# # turn filepath name ending into corresponding year and month and check if any years do not contain 12 months
 # as.data.frame(filepaths) |> 
 #   mutate(year = as.factor(str_sub(filepaths, start = 99, end=102)),
 #          month = as.factor(str_sub(filepaths, start = 103, end=104))) |>
@@ -194,7 +194,7 @@ netcdf files often has has lat and long as dimensions covering space (and someim
 # 
 # saveRDS(copenv_df, file = paste0(home, "/data/environment/copernicus_1993_2024.rds"))
 #
-# detach(tidyterra) # as this conflicts with dplyr function names and we´re domne with tidyterra 
+# detach(tidyterra) # as this conflicts with dplyr function names and we´re done with tidyterra 
 ```
 
 ## 3. Combine hindcast and Copernicus data 
@@ -735,7 +735,7 @@ env_df |>
 
 ```
 
-Teh predictions doesnt look too good.
+The predictions doesnt look too good.
 Test more temperature models...
 
 ```{r temp fit 2}
@@ -813,6 +813,7 @@ Mod_temp4c <-
   spatiotemporal = "off",
   family = gaussian(link = "identity"),
 )
+
 ```
 
 
@@ -855,7 +856,7 @@ env_df |>
 
 ```
 
-## 5. Plot and save predictions for 2018-2024 with hindcast and plot
+## 5. Plot and then save models for predicting for 2018-2024 with hindcast and plot
 
 ```{r}
 # combine oxy, salinity and temperature predictions
