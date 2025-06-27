@@ -1,0 +1,1259 @@
+---
+title: "Combine environmental data from SMHI and Copernicus v2"
+author: "Max Lindmark & Viktor Thunell"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: 
+  html:
+    embed-resources: true
+    fig-width: 8
+    #fig-asp: 0.618
+knitr: 
+  opts_chunk:
+    fig.align: center
+editor: source
+execute: 
+  echo: true
+  eval: true
+  cache: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+## Introduction
+
+This script takes netcdf files with spatiotemporal environmental data and tranform these to a suitable format for our analysis.
+
+We add environmental information to the stomach observations (see 03-add-env-data-to-stomachs) and use these as covariates in the models and in prediction (see 04-make-pred-grid).
+
+The data comes from...
+  * Bottom oxygen, temperature and salinity is from spatiotemporal simulated data available from the [Copernicus](https://data.marine.copernicus.eu/products) and the Swedish Meteorological and Hydrological Institute (SMHI). 
+  * From Copernicus, we use the Baltic sea reanalysis (for years 1993-2023) of [Nemo](https://nemo-ocean.eu) for salinity and temperature and the biogeochemical model [ERGOM](https://ergom.net/). 
+  * From SMHI we used hindcast simulations (1961-2017) of the NEMO–SCOBI model (NEMO-Nordic coupled to the Swedish Coastal and Ocean Biogeochemical model SCOBI, https://doi.org/10.5194/bg-2023-116).
+
+Below, the two data sets are referred to as **Copernicus** and **hindcast**.
+
+## Load libraries 
+```{r lib}
+#| message: false
+#| cache: false
+
+rm(list=ls())
+
+pkgs <- c("tidyverse","sdmTMB", "viridis", "terra", "tidyterra", "chron", "ncdf4", "tidync", "patchwork")#, "conflicted") 
+
+if(length(setdiff(pkgs, rownames(installed.packages()))) > 0){
+
+    install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
+}
+
+invisible(lapply(pkgs, library, character.only = T))
+
+# Source code for map plots
+#devtools::source_url("https://raw.githubusercontent.com/VThunell/cod-rpw/main/R/functions/map-plot.R")
+# Packages not on CRAN
+# devtools::install_github("seananderson/ggsidekick") # not on CRAN 
+#library(ggsidekick)
+#theme_set(theme_sleek())
+
+# Set path
+home <- here::here()
+
+# conflicts_prefer(tidylog::mutate, tidylog::filter, tidylog::slice_sample, tidylog::drop_na, dplyr::summarise, tidylog::distinct)
+```
+
+## 1. NEMO hindcast data 1961-2017 (bottom oxygen, temperature and salinity)
+
+The SMHI hindcast data covering the baltic and our variables of interest comes as one netdcf file per month (12 per year). Here we retrieve the info we need in each netcdf file and combine them into a dataframe.
+
+netcdf files often has has lat and long as dimensions covering space (and someimes depth and time) but these don't have that so that we can easily go from arrays to 2-dimensional matrices or data frames which are models rely on. Now lat and lon are instead 2d variables and the grid dimension (x, y) are just integer-valued (1). So we have to fiddle with them a bit (join in coordinates to the same file) to extract the space and depth for each time slice (month year).
+
+```{r SMHI hindcast 1961-2017}
+# library(tidyterra) # due to conflicting function names in tidyterra and dplyr we use this only here
+# # Get the file paths for each netcdf
+# path <- paste0(home, "/data/hindcastRunToSLU/20240701_DataDelivery_SMHI_SLU")
+# filepaths <- list.files(path, full.names=TRUE)
+# 
+# # turn filepath name ending into corresponding year and month and check if any years do not contain 12 months
+# as.data.frame(filepaths) |> 
+#   mutate(year = as.factor(str_sub(filepaths, start = 99, end=102)),
+#          month = as.factor(str_sub(filepaths, start = 103, end=104))) |>
+#   summarise(n=n(), .by = year)
+# 
+# f_envdat <- function(file)  {
+#   a <- tidync(file) |>
+#     hyper_tibble()
+# 
+#   b <- tidync(file) |> 
+#     activate( "D3,D2" ) |> # grid identifiers
+#     hyper_tibble()
+# 
+#   c <-left_join(a, b, by = c("x","y")) |> 
+#     filter(between(nav_lat, 54, 60) & between(nav_lon, 12.5, 24.5), # reduce extent from coord in stomach data
+#            !vosaline == 0 ) |> # to filter out non-existing values, could also be oxy or votemper
+#     filter(depth == max(depth), .by= c(nav_lat,nav_lon)) |>
+#     mutate(year = str_sub(file, start = 99, end=102),
+#            month = str_sub(file, start = 103, end=104))
+#   }
+# 
+# time <- Sys.time() # 35 min!!!
+# 
+# hindenv_df <- filepaths |>
+#   map(\(x) f_envdat(x)) |>
+# list_rbind()
+# 
+# Sys.time() - time
+# 
+# hindenv_df <- hindenv_df |>
+#   dplyr::select(-x,-y) |>
+#   rename(lat = nav_lat,
+#          lon = nav_lon,
+#          sal = vosaline,
+#          temp = votemper) |>
+#   mutate(month = as.integer(month),
+#          year = as.integer(year), 
+#          year.month = paste(year, month, sep = "."))
+# 
+# saveRDS(hindenv_df, file = paste0(home, "/data/environment/hindcast_1961_2017.rds"))
+
+```
+
+## 2. Copernicus reanalysis and forecast 1993-2024 (bottom oxygen, temperature and salinity)
+
+```{r Copernicus 1993-2021 and 2022-2023}
+# # Oxygen
+# 
+# # Source:
+# # forecast, cmems_mod_bal_bgc_anfc_P1M-m_1723620449355.nc
+# # https://data.marine.copernicus.eu/product/BALTICSEA_ANALYSISFORECAST_BGC_003_007/download?dataset=cmems_mod_bal_bgc_anfc_P1M-m_202311
+# 
+# # reanalysis, cmems_mod_bal_bgc_my_P1M-m_1723620645492.nc
+# # https://data.marine.copernicus.eu/product/BALTICSEA_MULTIYEAR_BGC_003_012/download?dataset=cmems_mod_bal_bgc_my_P1M-m_202303
+# 
+# # forecast
+# # oxy_df1_fore <- tidync(paste0(home, "/data/NEMO/cmems_mod_bal_bgc_anfc_P1M-m_1723620449355.nc")) |>
+# #   hyper_tibble() |>
+# #   mutate(date = as_datetime(time, origin = '1970-01-01'),
+# #          month = month(date),
+# #          day = day(date),
+# #          year = year(date),
+# #          month_year = paste(month, year, sep = "_")) |>
+# #   mutate(oxy = mean(o2b, na.rm = TRUE), .by = c(month_year, latitude, longitude)) |>
+# #   mutate(oxy = oxy * 0.0223909) # conversion factor from mmol/m3 to ?
+# # # the hindcast data is averaged by month, so we do the same here even though it seems like its only one obs per month.
+# 
+# # reanalysis BALTICSEA_MULTIYEAR_BGC_003_012 Monthly
+# oxy_df <- tidync(paste0(home, "/data/environment/NEMO/cmems_mod_bal_bgc_my_P1M-m_1751010257918.nc")) |>
+#   activate( "D3,D2,D0" ) |> # 
+#   hyper_tibble() |>
+#   mutate(date = as_datetime(time),
+#          month = month(date),
+#          day = day(date),
+#          year = year(date),
+#          year.month = paste(year, month, sep = ".")) |>
+#   mutate(oxy = mean(o2b, na.rm = TRUE), .by = c(year.month, latitude, longitude)) |>
+#   mutate(oxy = oxy * 0.0223909) |> # conversion factor from mmol/m3 to ?
+# # the hindcast data is averaged by month, so we do the same here even though it seems like its only one obs per month.
+#   dplyr::select(year.month, latitude, longitude, oxy, day, month, year)
+# 
+# # Temperature and salinity
+# 
+# # source
+# # forecast cmems_mod_bal_phy_anfc_P1M-m_1723620759845.nc
+# # https://data.marine.copernicus.eu/product/BALTICSEA_ANALYSISFORECAST_PHY_003_006/download?dataset=cmems_mod_bal_phy_anfc_P1M-m_202311
+# # reanalysis cmems_mod_bal_phy_my_P1M-m_1723620956814.nc
+# # https://data.marine.copernicus.eu/product/BALTICSEA_MULTIYEAR_PHY_003_011/download
+# 
+# # forecast
+# # tempsal_df1_fore <- tidync(paste0(home, "/data/NEMO/cmems_mod_bal_phy_anfc_P1M-m_1723620759845.nc")) |>
+# #   hyper_tibble() |>
+# #   mutate(date = as_datetime(time, origin = '1970-01-01'),
+# #          month = month(date),
+# #          day = day(date),
+# #          year = year(date),
+# #          month_year = paste(month, year, sep = "_")) |>
+# #   mutate(sal = mean(sob, na.rm = TRUE), .by = c(month_year, latitude, longitude)) |>
+# #   mutate(temp = mean(bottomT, na.rm = TRUE), .by = c(month_year, latitude, longitude))
+# 
+# #sum(ncvar_get(ncin,"bottomT") == -999, na.rm=TRUE) # no fill values to replace
+# 
+# # reanalysis BALTICSEA_MULTIYEAR_PHY_003_011 Monthly
+# tempsal_df <- tidync(paste0(home, "/data/environment/NEMO/cmems_mod_bal_phy_my_P1M-m_1751009705987.nc")) |>
+#   hyper_tibble() |>
+#   mutate(date = as_datetime(time),
+#          month = month(date),
+#          day = day(date),
+#          year = year(date),
+#          year.month = paste(year, month, sep = ".")) |>
+#   mutate(sal = mean(sob, na.rm = TRUE), .by = c(year.month, latitude, longitude)) |>
+#   mutate(temp = mean(bottomT, na.rm = TRUE), .by = c(year.month, latitude, longitude)) |>
+#   #tempsal_df <- 
+#   #bind_rows(tempsal_df1_rean, tempsal_df1_fore) |>
+#   dplyr::select(year.month, latitude, longitude, sal, temp, day, month, year)
+# 
+# # join env variables
+# copenv_df <-
+#   left_join(oxy_df, tempsal_df) |>
+#   rename(lat = latitude,
+#          lon = longitude)
+# 
+# saveRDS(copenv_df, file = paste0(home, "/data/environment/copernicus_1993_2023_v2.rds"))
+# 
+# detach(tidyterra) # as this conflicts with dplyr function names and we´re done with tidyterra
+```
+
+## 3. Combine hindcast and Copernicus data 
+
+Combine SMHI and Copernicus in a df
+```{r combine env data}
+#| cache: false
+  
+# load copernicus
+cope <- readRDS(file = paste0(home, "/data/environment/copernicus_1993_2023_v2.rds")) |>
+  mutate(lat = as.double(lat),
+         lon = as.double(lon)) 
+
+# load hindcast
+hind <- readRDS(file = paste0(home, "/data/environment/hindcast_1961_2017.rds")) |>
+  mutate(#model = as.factor("hindcast"),
+         year.month = paste(year, month, sep = ".")
+         ) |>
+  filter(lat <= max(cope$lat)#,
+         #lon <= max(cope$lon)
+         )
+
+# add years available in copernicus but not in hindcast 
+extra.time <- hind |>
+  filter(year == max(year)) |>
+  mutate(across(c(temp, sal, oxy, year.month), ~NA)) |>
+  replicate_df("year", setdiff(cope$year, hind$year)) |> 
+  mutate(year.month = paste(year, month, sep = ".")) |> 
+  filter(year.month %in% unique(cope$year.month))
+
+hind <- hind |> bind_rows(extra.time)
+
+# copenv_df_2 |>
+#   filter(year %in% c(2017:2022),
+#          month ==3) |>
+#   ggplot(aes(lon, lat, fill = temp)) +
+#   geom_raster() +
+#   facet_wrap(~year, nrow = 2) +
+#   scale_fill_viridis()
+  
+str(cope)
+str(hind)
+
+```
+
+The two sources are not on the same grid. For a wide data, extract with terra.This generates a df with hindcast variables "temp", "oxy", "sal" and copern. variables "temp_n", "oxy_n", "sal_n"
+
+```{r}
+env_list <- list()
+
+ym <- pull(hind |> filter(year > 1992) |> distinct(year.month))
+
+for (i in ym ) {
+
+  d_sub <- filter(hind, year.month == i)
+  env_sub <- filter(cope, year.month == i)
+
+  # Convert to spat_raster
+  env_raster <- as_spatraster(env_sub,
+    xycols = 3:2,
+    crs = "WGS84", digits = 3
+  )
+
+  # Extract from raster
+  d_sub$temp_n <- terra::extract(
+    env_raster$temp,
+    d_sub |> dplyr::select(lon, lat)
+  )$temp
+
+  d_sub$sal_n <- terra::extract(
+    env_raster$sal,
+    d_sub |> dplyr::select(lon, lat)
+  )$sal
+
+  d_sub$oxy_n <- terra::extract(
+    env_raster$oxy,
+    d_sub |> dplyr::select(lon, lat)
+  )$oxy
+
+  # Save
+  env_list[[i]] <- d_sub
+}
+
+wide <- bind_rows(env_list)
+ 
+# some cope points are outside the hind grid
+wide |>
+  filter(is.na(temp_n)) |>
+  ggplot(aes(lon, lat)) +
+  geom_point(size = 0.1)
+
+# bind with hind data before 1993 
+wide <- bind_rows(wide, hind |> filter(year < 1993)) |> 
+  filter(lon < 22) |> 
+  filter(!(lat > 55.5 & lon < 13))
+
+wide <- wide |>
+  add_utm_columns(ll_names = c("lon", "lat"))
+
+wide
+```
+
+
+<!-- ### Plot environmental covariates for march and a few selected years -->
+
+<!-- ```{r} -->
+<!-- #oxy -->
+<!-- env_df |>  -->
+<!--   filter(month == 3, #the most common month in the stomach data -->
+<!--          lon > 13.5, -->
+<!--          year %in% c(1993,1999,2007,2014)) |> -->
+<!--   ggplot(aes(lon, lat, fill = oxy)) + -->
+<!--   geom_raster() + -->
+<!--   facet_wrap(model~year, nrow = 2) -->
+
+<!-- #temp -->
+<!-- env_df |>  -->
+<!--   filter(month == 3, #the most common month in the stomach data -->
+<!--          lon > 13.5, -->
+<!--          year %in% c(1993,1999,2007,2014)) |> -->
+<!--   ggplot(aes(lon, lat, fill = temp)) + -->
+<!--   geom_raster() + -->
+<!--   facet_wrap(model~year, nrow = 2) + -->
+<!--   scale_fill_viridis() -->
+
+<!-- #sal -->
+<!-- env_df |>  -->
+<!--   filter(month == 3, #the most common month in the stomach data -->
+<!--          lon > 13.5, -->
+<!--          year %in% c(1993,1999,2007,2014)) |> -->
+<!--   ggplot(aes(lon, lat, fill = sal)) + -->
+<!--   geom_raster() + -->
+<!--   facet_wrap(model~year, nrow = 2) + -->
+<!--   scale_fill_viridis(option="magma") -->
+<!-- ``` -->
+
+## 4. Bias correction 
+
+### Oxygen 
+```{r}
+# rm(d_sub,env_sub,env_list, env_raster)
+# gc()
+oxy_dat <- wide |> 
+  filter(year %in% c(2001:2017)) |> 
+  mutate(diff = oxy - oxy_n) |> 
+  drop_na(diff) |>
+  select(diff, X, Y, year)
+
+# Make mesh & fit models
+mesh <- make_mesh(oxy_dat, cutoff = 15, xy_cols = c("X", "Y"))
+plot(mesh)
+
+proj_years <- setdiff(cope$year, drop_na(hind)$year)
+hind_year <- min(cope$year):(min(oxy_dat$year)-1)
+
+# This assumes seasonality is the same.
+# It does capture spatial differences between the models, and the fact that the mean difference seems to vary from year to year. We do this with a random walk, so the difference in means in years 2017--2024 is basically a projection... We can use 1993--2006 for comparing our predictions (then we need extra time I think)
+moxy <- sdmTMB(diff ~ 1,
+               spatial = "on",
+               time_varying = ~1,
+               time_varying_type = "rw0",
+               extra_time = c(hind_year, proj_years),
+               mesh = mesh,
+               time = "year",
+               data = oxy_dat
+               )
+
+moxy
+```
+
+```{r}
+sanity(moxy)
+
+# Time-varying effect
+est <- as.list(moxy$sd_report, "Est")
+est_se <- as.list(moxy$sd_report, "Std. Error")
+
+tw <- tibble(est = est$b_rw_t,
+             se = est_se$b_rw_t,
+             year = c(hind_year, unique(oxy_dat$year), proj_years))
+
+ptw <- ggplot(tw, aes(year, est)) + 
+  geom_ribbon(aes(ymin = est - 1.96*se, ymax = est + 1.96*se),
+              alpha = 0.3) +
+  labs(x = "Year", y = "Time-varying intercept") +
+  coord_cartesian(expand = 0) +
+  xlim(1978, 2024) +
+  annotate("text", label = "(a)", x = -Inf, y = Inf, vjust = 1.5, hjust = -0.2,
+           color = "gray40", size = 4) +
+  geom_line() 
+
+# Predict differences (including the extra_time)
+poxy <- predict(moxy, 
+                wide |> filter(year %in% c(hind_year, unique(oxy_dat$year), proj_years)))
+
+# Add in the pre-copernicus years
+poxy <- bind_rows(poxy, hind_old)
+
+# Manually predict the hindcast values, given copernicus and the estimated difference
+poxy$oxy_pred <- poxy$oxy_n + poxy$est
+
+# Time series plots
+pal <- RColorBrewer::brewer.pal(n=4, "Paired")
+ 
+pmean <- poxy |> 
+  pivot_longer(c(oxy, oxy_n, oxy_pred)) |> 
+  mutate(name = fct_recode(name,
+    "Hindcast" = "oxy",
+    "Copernicus" = "oxy_n",
+    "Hindcast-predicted" = "oxy_pred"
+  )) |>
+  summarise(mean = mean(value, na.rm = TRUE), .by = c(name, year)) |> 
+  ggplot(aes(year, mean, color = name, linetype = name)) + 
+  geom_rect(aes(xmin = min(oxy_dat$year), xmax = max(proj_years),
+                ymin = -Inf, ymax = Inf), color = NA,
+              fill = "grey95", alpha = 0.1) +
+  geom_rect(aes(xmin = min(proj_years), xmax = max(proj_years),
+                ymin = -Inf, ymax = Inf), color = NA,
+              fill = "grey85", alpha = 0.1) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = pal[c(1,4,2)]) +
+  labs(x = "Year", y = expression(paste("Mean O"[2], " (ml/L)"))) +
+  theme(legend.position.inside = c(0.15, 0.15),
+        legend.title = element_blank()) + 
+  guides(color = guide_legend(position = "inside")) +
+  coord_cartesian(expand = 0) +
+  annotate("text", label = "(b)", x = -Inf, y = Inf, vjust = 1.5, hjust = -0.2,
+           color = "gray40", size = 4)
+
+(ptw / pmean) + plot_layout(axes = "collect")
+```
+
+
+### Temperature 
+
+```{r}
+temp_dat <- wide |> 
+  filter(year %in% c(2001:2017)) |> 
+  mutate(diff = temp - temp_n) |> 
+  drop_na(diff)
+
+# Make mesh & fit models
+mesh <- make_mesh(temp_dat, cutoff = 10, xy_cols = c("X", "Y"))
+#plot(mesh)
+
+# Fit
+mtemp <- sdmTMB(diff ~ 1,
+                spatial = "on",
+                time_varying = ~1,
+                time_varying_type = "rw0",
+                extra_time = c(hind_year, proj_years),
+                mesh = mesh,
+                time = "year",
+                data = temp_dat
+                )
+
+mtemp
+```
+
+```{r}
+sanity(mtemp)
+
+# Time-varying effect
+est <- as.list(mtemp$sd_report, "Est")
+est_se <- as.list(mtemp$sd_report, "Std. Error")
+
+tw <- tibble(est = est$b_rw_t,
+             se = est_se$b_rw_t,
+             year = c(hind_year, unique(temp_dat$year), proj_years))
+
+ptw <- ggplot(tw, aes(year, est)) + 
+  geom_ribbon(aes(ymin = est - 1.96*se, ymax = est + 1.96*se),
+              alpha = 0.3) +
+  labs(x = "Year", y = "Time-varying intercept") +
+  coord_cartesian(expand = 0) +
+  xlim(1978, 2024) +
+  annotate("text", label = "(a)", x = -Inf, y = Inf, vjust = 1.5, hjust = -0.2,
+           color = "gray40", size = 4) +
+  geom_line() 
+
+# Predict differences (including the extra_time)
+ptemp <- predict(mtemp, wide |> filter(year %in% c(hind_year, unique(temp_dat$year), proj_years)))
+
+# Add in the pre-copernicus years
+ptemp <- bind_rows(ptemp, hind_old)
+
+# Manually predict the hindcast values, given copernicus and the estimated difference
+ptemp$temp_pred <- ptemp$temp_n + ptemp$est
+
+# Time series plots
+pal <- RColorBrewer::brewer.pal(n=4, "Paired")
+ 
+pmean <- ptemp |> 
+  pivot_longer(c(temp, temp_n, temp_pred)) |> 
+  mutate(name = fct_recode(name,
+    "Hindcast" = "temp",
+    "Copernicus" = "temp_n",
+    "Hindcast-predicted" = "temp_pred"
+  )) |>
+  summarise(mean = mean(value, na.rm = TRUE), .by = c(name, year)) |> 
+  ggplot(aes(year, mean, color = name, linetype = name)) + 
+  geom_rect(aes(xmin = min(temp_dat$year), xmax = max(proj_years),
+                ymin = -Inf, ymax = Inf), color = NA,
+              fill = "grey95", alpha = 0.1) +
+  geom_rect(aes(xmin = min(proj_years), xmax = max(proj_years),
+                ymin = -Inf, ymax = Inf), color = NA,
+              fill = "grey85", alpha = 0.1) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = pal[c(1,4,2)]) +
+  labs(x = "Year", y = "Mean temperature (°C)") +
+  theme(legend.position.inside = c(0.15, 0.85),
+        legend.title = element_blank()) + 
+  guides(color = guide_legend(position = "inside")) +
+  coord_cartesian(expand = 0) +
+  annotate("text", label = "(b)", x = -Inf, y = Inf, vjust = 1.5, hjust = -0.2,
+           color = "gray40", size = 4)
+
+(ptw / pmean) + plot_layout(axes = "collect")
+```
+
+### Salinity
+
+```{r}
+sal_dat <- wide |> 
+  filter(year %in% c(2001:2017)) |> 
+  mutate(diff = sal - sal_n) |> 
+  drop_na(diff)
+
+# Make mesh & fit models
+mesh = make_mesh(sal_dat, cutoff = 10, xy_cols = c("X", "Y"))
+#plot(mesh)
+
+# Fit
+msal <- sdmTMB(diff ~ 1,
+               spatial = "on",
+               time_varying = ~1,
+               time_varying_type = "rw0",
+               extra_time = c(hind_year, proj_years),
+               mesh = mesh,
+               time = "year",
+               data = sal_dat
+               )
+
+msal
+```
+
+```{r}
+sanity(msal)
+
+# Time-varying effect
+est <- as.list(msal$sd_report, "Est")
+est_se <- as.list(msal$sd_report, "Std. Error")
+
+tw <- tibble(est = est$b_rw_t,
+             se = est_se$b_rw_t,
+             year = c(hind_year, unique(sal_dat$year), proj_years))
+
+ptw <- ggplot(tw, aes(year, est)) + 
+  geom_ribbon(aes(ymin = est - 1.96*se, ymax = est + 1.96*se),
+              alpha = 0.3) +
+  labs(x = "Year", y = "Time-varying intercept") +
+  coord_cartesian(expand = 0) +
+  xlim(1978, 2024) +
+  annotate("text", label = "(a)", x = -Inf, y = Inf, vjust = 1.5, hjust = -0.2,
+           color = "gray40", size = 4) +
+  geom_line() 
+
+# Predict differences (including the extra_time)
+psal <- predict(msal, wide |> filter(year %in% c(hind_year, unique(sal_dat$year), proj_years)))
+
+# Add in the pre-copernicus years
+psal <- bind_rows(psal, hind_old)
+
+# Manually predict the hindcast values, given copernicus and the estimated difference
+psal$sal_pred <- psal$sal_n + psal$est
+
+# Time series plots
+pal <- RColorBrewer::brewer.pal(n=4, "Paired")
+ 
+pmean <- psal |> 
+  pivot_longer(c(sal, sal_n, sal_pred)) |> 
+  mutate(name = fct_recode(name,
+    "Hindcast" = "sal",
+    "Copernicus" = "sal_n",
+    "Hindcast-predicted" = "sal_pred"
+  )) |>
+  summarise(mean = mean(value, na.rm = TRUE), .by = c(name, year)) |> 
+  ggplot(aes(year, mean, color = name, linetype = name)) + 
+  geom_rect(aes(xmin = min(temp_dat$year), xmax = max(proj_years),
+                ymin = -Inf, ymax = Inf), color = NA,
+              fill = "grey95", alpha = 0.1) +
+  geom_rect(aes(xmin = min(proj_years), xmax = max(proj_years),
+                ymin = -Inf, ymax = Inf), color = NA,
+              fill = "grey85", alpha = 0.1) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = pal[c(1,4,2)]) +
+  labs(x = "Year", y = "Mean salinity (ppt)") +
+  theme(legend.position.inside = c(0.15, 0.85),
+        legend.title = element_blank()) + 
+  guides(color = guide_legend(position = "inside")) +
+  coord_cartesian(expand = 0) +
+  annotate("text", label = "(b)", x = -Inf, y = Inf, vjust = 1.5, hjust = -0.2,
+           color = "gray40", size = 4)
+
+(ptw / pmean) + plot_layout(axes = "collect")
+```
+
+
+<!-- ## 4. Model spatial differences between Copernicus and SMHI-hindcast and predict the Hindcast for 2018-2024 -->
+
+<!-- ### Oxygen -->
+<!-- To account for consistent differences between the Copernicus Baltic reanalysis and forecast and the SMHI Hindcast, we model the spatial and temporal variation between the models and predict the years that are missing from the Hindcast (2018-2024).     -->
+
+<!-- ```{r oxy fit} -->
+<!-- # There are differneces between the data but in these plots, the main diff is that the hindcast contains a larger range of negative values. The "dip" in the distrubution is still around 5. -->
+<!-- env_df |> -->
+<!--   slice_sample( n = 100000) |> -->
+<!--   filter(model == "copernicus") |> -->
+<!--   ggplot(aes(x=oxy)) +  -->
+<!--   geom_histogram() + -->
+<!--   labs(title = "Copernicus") + -->
+
+<!-- env_df |> -->
+<!--   slice_sample( n = 100000) |> -->
+<!--   filter(model == "hindcast") |> -->
+<!--   ggplot(aes(x=oxy)) +  -->
+<!--   geom_histogram() + -->
+<!--   labs(title = "hindcast") -->
+
+<!-- # model data, filter and sample -->
+<!-- env_df_2 <- env_df |> -->
+<!--   filter(year > 1992) |> -->
+<!--   slice_sample( n = 100000) |> # sample data as it is too much data to model -->
+<!--   mutate(yearmonth = ((year-1963)*12)+month) |> # a continuous time predictpr fpr the AR process -->
+<!--   # group_by(model) |> # for equal sampling between groups -->
+<!--   # sample_n(50000) |> -->
+<!--   # ungroup() |> -->
+<!--   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) -->
+
+<!-- mesh <- make_mesh(env_df_2, c("X", "Y"), cutoff = 5) -->
+<!-- plot(mesh) -->
+
+<!-- # spatial varying model intercept -->
+<!-- Mod_oxy1 <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2 , -->
+<!--   formula = oxy ~ 0 + model + as.factor(year), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- # spatial grf and both year and month as factor predictors -->
+<!-- Mod_oxy2 <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = oxy ~ 0 + model + as.factor(year) + as.factor(month), -->
+<!--   mesh = mesh, -->
+<!--   spatial = "on", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- # spatial_varying effect of model and both year and month as factor predictors -->
+<!-- Mod_oxy3 <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = oxy ~ 0 + model + as.factor(year) + as.factor(month), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- # time_varying ar1 intercept (year and month) and spatial_varying effect of model -->
+<!-- Mod_oxy4 <- -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2,  -->
+<!--   formula = oxy ~ 0 + model, -->
+<!--   mesh = mesh, -->
+<!--   time_varying_type = "ar1", -->
+<!--   time_varying = ~1, -->
+<!--   time = "yearmonth", -->
+<!--   extra_time = c(719), -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- sanity(Mod_oxy1) -->
+<!-- sanity(Mod_oxy2) -->
+<!-- sanity(Mod_oxy3) -->
+<!-- sanity(Mod_oxy4) -->
+<!-- AIC(Mod_oxy1) -->
+<!-- AIC(Mod_oxy2) -->
+<!-- AIC(Mod_oxy3) -->
+<!-- AIC(Mod_oxy4) -->
+
+<!-- ``` -->
+
+<!-- Model 3 and 4 has the lowest and similar AIC. Which one of these predicts oxygen best for years that are disclosed for the model (2007-2012 used below) and how do the hindcast predicted years 2018-2024 compare to the Copernicus forecast. Now we only use data from 2000 to speed things up bit. -->
+
+<!-- ```{r} -->
+<!-- # remove hindcast data for 2007-2012 -->
+<!-- mesh <- make_mesh(env_df_2 |> filter(year > 2000) |> filter(!(year %in% 2007:2012 & model == "hindcast")), c("X", "Y"), cutoff = 4) -->
+
+<!-- Mod_oxy3b <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2 |> filter(year > 2000) |> filter(!(year %in% 2007:2012 & model == "hindcast")), -->
+<!--   formula = oxy ~ 0 + model + as.factor(year) + as.factor(month), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- Mod_oxy4b <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2 |> filter(year > 2000) |> filter(!(year %in% 2007:2012 & model == "hindcast")), -->
+<!--   formula = oxy ~ 0 + model, # + as.factor(year) + as.factor(month) -->
+<!--   mesh = mesh, -->
+<!--   time_varying_type = "ar1", -->
+<!--   time_varying = ~1, -->
+<!--   time = "yearmonth", -->
+<!--   extra_time = c(719), -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- # Extend data with missing year for hindcast and predict on data. -->
+
+<!-- # Model 3 newdata -->
+<!-- env_df_predhind3 <- env_df |> -->
+<!--   filter( model == "hindcast") |> -->
+<!--   distinct(lat, lon) |> -->
+<!--   replicate_df(time_name = "year", time_values = 2001:2023) |> -->
+<!--   mutate( model = as_factor("hindcast"), -->
+<!--           month = 3) |> -->
+<!--   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) -->
+
+<!-- oxy_predhind3 <- predict(Mod_oxy3b, newdata = env_df_predhind3) -->
+
+<!-- # Model 4 newdata -->
+<!-- env_df_predhind4 <- env_df |> -->
+<!--   filter( model == "hindcast") |> -->
+<!--   dplyr::distinct(lat, lon) |> -->
+<!--   replicate_df(time_name = "yearmonth", time_values = seq((2001-1963)*12+3,(2023-1963)*12+3, by=12)) |> # for march every year -->
+<!--   mutate( model = as_factor("hindcast")) |> -->
+<!--   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) -->
+
+<!-- oxy_predhind4 <- predict(Mod_oxy4b, newdata = env_df_predhind4) -->
+
+<!-- # Plot compare model 3 and 4 -->
+<!-- bind_rows(oxy_predhind3 |> mutate(Mod ="Mod_oxy3"), oxy_predhind4 |> mutate(Mod = "Mod_oxy4", year = 1963+(yearmonth-3)/12)) |> -->
+<!--   mutate(mean_est = mean(est), .by = c(year, Mod)) |> -->
+<!--   filter(year > 1990) |> -->
+<!--   ggplot() + -->
+<!--   geom_line(aes(year, mean_est, color = as.factor(Mod))) + -->
+<!--   geom_line(data = env_df |> filter(month == 3, year > 1990) |> summarise(oxy = mean(oxy), .by = c(year,model)), aes(x = year, y = oxy, linetype = model)) + -->
+<!--   geom_vline( xintercept = c(2007,2012))  -->
+
+<!-- ``` -->
+
+<!-- While model 3 and 4 differ in their predictions for 2007-2012 they are very similar. For years above 2018 they are even more similar.  -->
+
+<!-- Now we compare spatial differences model 3 and 4 for oxygen. -->
+
+<!-- ```{r} -->
+<!-- oxy_predb3 <- predict(Mod_oxy3) -->
+<!-- oxy_predb4 <- predict(Mod_oxy4) -->
+
+<!-- bind_rows(oxy_predb3 |> mutate(oxymod="Mod_oxy3"), oxy_predb4 |> mutate(oxymod="Mod_oxy4")) |> -->
+<!--   mutate( diff = oxy - est, .by = c(year, model)) |> -->
+<!--   mutate(decade = round(year/10) * 10) |> -->
+<!--   summarise(decadaldiffs = mean(abs(diff)), .by = c(decade, oxymod)) |> -->
+<!--   arrange(decade) |> -->
+<!--   filter(decade > 1990) -->
+
+<!-- bind_rows(oxy_predb3 |> mutate(oxymod="Mod_oxy3"), oxy_predb4 |> mutate(oxymod="Mod_oxy4")) |> -->
+<!--   mutate( diff = oxy - est, .by = c(year, model)) |> -->
+<!--   mutate(decade = round(year/10) * 10) |> -->
+<!--   filter( model == "hindcast", -->
+<!--           decade > 1990) |> -->
+<!--   ggplot(aes(lon,lat, color = diff)) + -->
+<!--   geom_point(size=0.1) + -->
+<!--   facet_wrap(decade~oxymod, ncol = 2) + -->
+<!--   scale_colour_viridis(option= "turbo") -->
+
+<!-- ``` -->
+
+<!-- Despite beeing very similar, the model with an AR1 process produces lower mean spatial difference. Visually they are indistinguishable I think. **Ar1 is the winner as it has lower diffs and lower AIC**.  -->
+
+<!-- ```{r} -->
+<!-- # Selected model of oxygen -->
+<!-- oxy_predhind4 <- predict(Mod_oxy4, newdata = env_df_predhind4) -->
+
+<!-- # Plot mean oxygen model for all years (1963-2023) -->
+<!-- oxy_predhind4 |> mutate(Mod = "Mod_oxy4", year = 1963+(yearmonth-3)/12) |> -->
+<!--   mutate(mean_est = mean(est), .by = c(year)) |> -->
+<!--   ggplot() + -->
+<!--   geom_line(aes(year, mean_est, linetype = Mod)) + -->
+<!--   geom_line(data = env_df |> filter(month == 3, year > 1990) |> summarise(oxy = mean(oxy), .by = c(year,model)), aes(x = year, y = oxy, color = model)) + -->
+<!--   labs(title = "Oxygen model") -->
+
+<!-- # spatially for march -->
+<!-- env_df |> -->
+<!--   filter(year %in% c(2005), -->
+<!--          month == 3, -->
+<!--          model == "hindcast") |> -->
+<!--   mutate(source="data") |> -->
+<!--   bind_rows(oxy_predhind4 |> -->
+<!--               mutate(year = floor(1963+(yearmonth/12)), -->
+<!--                      source="modelled", -->
+<!--                      oxy=est) |> -->
+<!--               filter(year %in% c(2005))) |> -->
+<!--   ggplot(aes(lon,lat, fill = oxy)) + -->
+<!--   geom_raster() + -->
+<!--   facet_wrap(~source) + -->
+<!--   scale_fill_viridis() -->
+<!-- ``` -->
+
+<!-- ### Salinity -->
+
+<!-- We skip corresponding oxygen model 2 for salinity here -->
+<!-- ```{r sal fit} -->
+
+<!-- env_df |> -->
+<!--   filter(model == "copernicus") |> -->
+<!--   ggplot(aes(x=sal)) +  -->
+<!--   geom_histogram() + -->
+<!--   labs(title = "Copernicus") + -->
+
+<!-- env_df |> -->
+<!--   filter(model == "hindcast") |> -->
+<!--   ggplot(aes(x=sal)) +  -->
+<!--   geom_histogram() + -->
+<!--   labs(title = "Hindcast") -->
+
+<!-- env_df_2 <- env_df |> -->
+<!--   filter(year > 1992) |> -->
+<!--   drop_na(sal) |> -->
+<!--   slice_sample( n = 100000) |> # sample data as it is too much data to model -->
+<!--   mutate(yearmonth = ((year-1963)*12)+month) |> # a continuous time predictpr fpr the AR process -->
+<!--   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) -->
+
+<!-- summary(env_df_2$sal) -->
+
+<!-- mesh <- make_mesh(env_df_2, c("X", "Y"), cutoff = 5) -->
+
+<!-- # spatial varying model intercept -->
+<!-- Mod_sal1 <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = sal ~ 0 + model + as.factor(year), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- # spatial varying model intercept and year and month as factor predictors -->
+<!-- Mod_sal3 <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = sal ~ 0 + model + as.factor(year) + as.factor(month), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- # time_varying ar1 intercept (year and month) and spatial_varying effect of model -->
+<!-- Mod_sal4 <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2,  -->
+<!--   formula = sal ~ 0 + model, -->
+<!--   mesh = mesh, -->
+<!--   time_varying_type = "ar1", -->
+<!--   time_varying = ~1, -->
+<!--   time = "yearmonth", -->
+<!--   extra_time = c(719), # add the month that is missing -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- sanity(Mod_sal1) -->
+<!-- sanity(Mod_sal3) -->
+<!-- sanity(Mod_sal4) -->
+<!-- AIC(Mod_sal1) -->
+<!-- AIC(Mod_sal3) -->
+<!-- AIC(Mod_sal4) -->
+<!-- ``` -->
+
+<!-- The AR1 model is best for salinity as well based on AIC.  -->
+
+<!-- ```{r} -->
+<!-- # extend data with missing year for hindcast and predict on data. The resulting df we will use to extract values to the pred grid instead of predicting on the pred grid.  -->
+<!-- sal_predhind <- predict(Mod_sal4, newdata = env_df_predhind4) -->
+
+<!-- # Plot salinity model -->
+<!-- sal_predhind |> mutate(Mod = "Mod_sal4", year = floor(1963+(yearmonth/12))) |> -->
+<!--   mutate(mean_est = mean(est), .by = c(year)) |> -->
+<!--   ggplot() + -->
+<!--   geom_line(aes(year, mean_est, linetype = Mod)) + -->
+<!--   geom_line(data = env_df |> filter(month == 3, year > 1990) |> summarise(sal = mean(sal), .by = c(year,model)), aes(x = year, y = sal, color = model)) + -->
+<!--   labs(title = "Salinity model") -->
+
+<!-- # spatially for march -->
+<!-- env_df |> -->
+<!--   filter(year %in% c(2005), -->
+<!--          month == 3, -->
+<!--          model == "hindcast", -->
+<!--          lon > 13.5) |> -->
+<!--   mutate(source="data") |> -->
+<!--   bind_rows(sal_predhind |> -->
+<!--               mutate(year = floor(1963+(yearmonth/12)), -->
+<!--                      source="modelled", -->
+<!--                      sal=est) |> -->
+<!--               filter(year %in% c(2005), -->
+<!--                      lon > 13.5)) |> -->
+<!--   ggplot(aes(lon,lat, fill = sal)) + -->
+<!--   geom_raster() + -->
+<!--   facet_wrap(~source) + -->
+<!--   scale_fill_viridis() -->
+
+<!-- ``` -->
+
+<!-- ### Temperature -->
+
+<!-- ```{r temp fit} -->
+
+<!-- env_df |> -->
+<!--   filter(model == "copernicus") |> -->
+<!--   ggplot(aes(x=temp)) +  -->
+<!--   geom_histogram() + -->
+<!--   labs(title = "Copernicus") + -->
+
+<!-- env_df |> -->
+<!--   filter(model == "hindcast") |> -->
+<!--   ggplot(aes(x=temp)) +  -->
+<!--   geom_histogram() + -->
+<!--   labs(title = "Hindcast") -->
+
+<!-- env_df_2 |> -->
+<!--   filter(year > 2010) |> -->
+<!--   mutate(geomean=mean(temp), .by = c(lat,lon, month, model)) |> -->
+<!--   ggplot() + -->
+<!--   geom_point(aes(month, temp, color = model)) + -->
+<!--   stat_smooth(aes(month, temp, color = model), method = "gam", formula = y ~ s(x))  -->
+
+<!-- env_df_2 <- env_df |> -->
+<!--   filter(year > 2010) |> -->
+<!--   drop_na(temp) |> -->
+<!--   slice_sample( n = 100000) |> # sample data as it is too much data to model -->
+<!--   mutate(yearmonth = ((year-1963)*12)+month) |> # a continuous time predictor for the AR process -->
+<!--   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) -->
+
+<!-- mesh <- make_mesh(env_df_2, c("X", "Y"), cutoff = 5) -->
+
+<!-- # spatial varying model intercept -->
+<!-- Mod_temp1 <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = temp ~ 0 + model + as.factor(year), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity") -->
+<!-- ) -->
+
+<!-- # spatial_varying effect of model -->
+<!-- Mod_temp3 <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = temp ~ 0 + model + as.factor(year) + as.factor(month), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- # time_varying ar1 intercept (year and month) and spatial_varying effect of model -->
+<!-- Mod_temp4 <- -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2,  -->
+<!--   formula = temp ~ 0 + model, -->
+<!--   mesh = mesh, -->
+<!--   time_varying_type = "ar1", -->
+<!--   time_varying = ~1, -->
+<!--   time = "yearmonth", -->
+<!--   extra_time = c(719), -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- AIC(Mod_temp1) -->
+<!-- AIC(Mod_temp3) # this is the one. -->
+<!-- AIC(Mod_temp4) -->
+
+<!-- sanity(Mod_temp1) -->
+<!-- sanity(Mod_temp3) -->
+<!-- sanity(Mod_temp4) -->
+
+<!-- # Mod4_res <- residuals(Mod_temp4) -->
+<!-- # qqnorm(Mod4_res[which(is.finite(Mod4_res))]) -->
+<!-- # qqline(Mod4_res[which(is.finite(Mod4_res))]) -->
+
+<!-- ``` -->
+
+<!-- The model with month and year as factor predictors is best for temperature based on AIC but it turns out they are not performing well spatially -->
+<!-- ```{r} -->
+
+<!-- env_df_predhind4 <- env_df |> -->
+<!--   filter( model == "hindcast") |> -->
+<!--   dplyr::distinct(lat, lon) |> -->
+<!--   replicate_df(time_name = "yearmonth", time_values = seq((2011-1963)*12+3,(2023-1963)*12+3, by=12)) |> # for march every year -->
+<!--   mutate( model = as_factor("hindcast"), -->
+<!--           month = 3) |> -->
+<!--   add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633) -->
+
+<!-- # Use the extended data pred_hind4 to predict missing years. -->
+<!-- temp_predhind3 <- predict(Mod_temp3, newdata = env_df_predhind4 |> mutate(year = floor(1963+(yearmonth/12)), month = 3)) -->
+
+<!-- temp_predhind4 <- predict(Mod_temp4, newdata = env_df_predhind4) -->
+
+<!-- # Plot temperature models, both are great at yearly means... -->
+<!-- temp_predhind3 |> mutate(Mod = "Mod_temp3") |> -->
+<!--   bind_rows(temp_predhind4 |> mutate(Mod = "Mod_temp4",  -->
+<!--                                      year = floor(1963+(yearmonth/12)))) |> -->
+<!--   mutate(mean_est = mean(est), .by = c(year)) |> -->
+<!--   ggplot() + -->
+<!--   geom_line(aes(year, mean_est, linetype = Mod)) + -->
+<!--   geom_line(data = env_df |> filter(month == 3, year > 1990) |> summarise(temp = mean(temp), .by = c(year,model)), aes(x = year, y = temp, color = model)) + -->
+<!--   labs(title = "Temperature model") -->
+
+<!-- # ...but spatially they are not good -->
+<!-- env_df |> -->
+<!--   filter(year %in% c(2017), -->
+<!--          month == 3, -->
+<!--          model == "hindcast") |> -->
+<!--   mutate(source="data") |> -->
+<!--   bind_rows(temp_predhind3 |> -->
+<!--               mutate(source="model3", -->
+<!--                      temp=est) |> -->
+<!--               filter(year %in% c(2017))) |> -->
+<!--   bind_rows(temp_predhind4 |> -->
+<!--               mutate(year = floor(1963+(yearmonth/12)), -->
+<!--                      source="model4", -->
+<!--                      temp=est) |> -->
+<!--               filter(year %in% c(2017))) |> -->
+<!--   ggplot(aes(lon,lat, fill = temp)) + -->
+<!--   geom_raster() + -->
+<!--   facet_wrap(~source) + -->
+<!--   scale_fill_viridis() -->
+
+<!-- ``` -->
+
+<!-- The predictions doesnt look too good. -->
+<!-- Test more temperature models... -->
+
+<!-- ```{r temp fit 2} -->
+<!-- # The model is not cpaturong the spatial process. One dierction is to add terms to the spstial varying model specific intercept.  Some testing and reasoning leads me to believe that the month effect is important for the spatial proocess - Within year, temperature varies alot and this depends mainly on depth which is a spatial time-invariant variable. -->
+
+<!-- # test a month smooth  -->
+<!-- Mod_temp3b <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = temp ~ 0 + model + as.factor(year) + s(month, bs = "cc"), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model, -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- # factor month on spatial instead of fixed -->
+<!-- Mod_temp3c <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = temp ~ 0 + model + as.factor(year), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model + as.factor(month), -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- Mod_temp3cc <-  -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2, -->
+<!--   formula = temp ~ 0 + model + as.factor(year) + as.factor(month), -->
+<!--   mesh = mesh, -->
+<!--   spatial_varying = ~ 0 + model + as.factor(month), -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+<!-- ``` -->
+
+
+<!-- ```{r temp fit 2b} -->
+<!-- # mod 4 smooth month and year as time -->
+<!-- Mod_temp4b <- -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2,  -->
+<!--   formula = temp ~ 0 + model + s(month, bs = "cc"), -->
+<!--   mesh = mesh, -->
+<!--   time_varying_type = "ar1", -->
+<!--   time_varying = ~1, -->
+<!--   time = "year", -->
+<!--   #extra_time = c(719), -->
+<!--   spatial_varying = ~ 0 + model,  -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+<!-- ``` -->
+
+
+<!-- ```{r temp fit 2c} -->
+<!-- # mod 4 month and year as time -->
+<!-- Mod_temp4c <- -->
+<!--   sdmTMB( -->
+<!--   data = env_df_2,  -->
+<!--   formula = temp ~ 0 + model, -->
+<!--   mesh = mesh, -->
+<!--   time_varying_type = "ar1", -->
+<!--   time_varying = ~1, -->
+<!--   time = "year", -->
+<!--   #extra_time = c(719), -->
+<!--   spatial_varying = ~ 0 + model + as.factor(month),  -->
+<!--   spatial = "off", -->
+<!--   spatiotemporal = "off", -->
+<!--   family = gaussian(link = "identity"), -->
+<!-- ) -->
+
+<!-- ``` -->
+
+
+<!-- ```{r temp fit AIC} -->
+<!-- AIC(Mod_temp3b) -->
+<!-- AIC(Mod_temp3c)   -->
+<!-- AIC(Mod_temp3cc) # lowest -->
+<!-- AIC(Mod_temp4b) -->
+<!-- AIC(Mod_temp4c) -->
+<!-- ``` -->
+
+<!-- How does Mod_temp3cc look in spatial predictions -->
+
+<!-- ```{r} -->
+<!-- temp_predhind <- predict(Mod_temp3cc, newdata = env_df_predhind4 |> mutate(year = floor(1963+(yearmonth/12)), month = 3)) -->
+
+<!-- # Plot temperature models, looks good -->
+<!-- temp_predhind |> -->
+<!--   mutate(yearmonth = ((year-1963)*12)+month, -->
+<!--          mean_est = mean(est), .by = c(yearmonth)) |> -->
+<!--   ggplot() + -->
+<!--   geom_line(aes(month+year, mean_est)) + -->
+<!--   geom_line(data = env_df |> filter(month == 3, year > 1990) |> summarise(temp = mean(temp), .by = c(year,model)), aes(x = year, y = temp, color = model)) + -->
+<!--   labs(title = "Temperature model") -->
+
+<!-- # and the spatial process looks much much better -->
+<!-- env_df |> -->
+<!--   filter(year %in% c(2017), -->
+<!--          month == 3, -->
+<!--          model == "hindcast") |> -->
+<!--   mutate(source="data") |> -->
+<!--   bind_rows(temp_predhind |> -->
+<!--               mutate(source="model3", -->
+<!--                      temp=est) |> -->
+<!--               filter(year %in% c(2017))) |> -->
+<!--   ggplot(aes(lon,lat, fill = temp)) + -->
+<!--   geom_raster() + -->
+<!--   facet_wrap(~source) + -->
+<!--   scale_fill_viridis() -->
+
+<!-- ``` -->
+
+<!-- ## 5. Plot and then save models for predicting for 2018-2024 with hindcast and plot -->
+
+<!-- ```{r} -->
+<!-- # combine oxy, salinity and temperature predictions -->
+<!-- env_df_comb <- -->
+<!-- oxy_predhind4 |> -->
+<!--   mutate(oxy = est, -->
+<!--          year = 1963+(yearmonth-3)/12) |> -->
+<!--   dplyr::select("lat", "lon", "year", "oxy") |> -->
+<!--   dplyr::left_join(sal_predhind |> mutate(sal = est, year = 1963+(yearmonth-3)/12) |> dplyr::select("lat", "lon", "sal", "year")) |> -->
+<!--   dplyr::left_join(temp_predhind |> mutate(temp = est, year = 1963+(yearmonth-3)/12) |> dplyr::select("lat", "lon", "temp", "year")) |> filter(year > 2017) |> -->
+<!--   bind_rows(env_df |> filter(year < 2018 & model == "hindcast")) |> -->
+<!--   dplyr::select("year","lat", "lon", "oxy", "temp", "sal") |> -->
+<!--   mutate(month = 3) |> -->
+<!--   filter(lon > 13.5) -->
+
+<!-- # plot -->
+<!-- plot_map_fc + -->
+<!--   geom_point(data = env_df_comb |> filter(year == 2019, month == 3) |> add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633), aes(X*1000, Y*1000, color = oxy), alpha = 0.5) + -->
+<!--   theme_sleek(base_size = 6) +  -->
+<!--   geom_sf() + -->
+<!--   labs(title = "2019") + -->
+
+<!-- plot_map_fc + -->
+<!--   geom_point(data = env_df_comb |> filter(year == 1963, month == 3) |> add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633), aes(X*1000, Y*1000, color = sal), alpha = 0.5) + -->
+<!--   theme_sleek(base_size = 6) +  -->
+<!--   geom_sf() + -->
+
+<!-- plot_map_fc + -->
+<!--   geom_point(data = env_df_comb |> filter(year == 1999, month == 3) |> add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633), aes(X*1000, Y*1000, color = temp), alpha = 0.5) + -->
+<!--   theme_sleek(base_size = 6) +  -->
+<!--   geom_sf()  -->
+
+<!-- env_df_comb |> -->
+<!--    filter(year %in% c(2014:2021)) |> -->
+<!--    ggplot(aes(lon, lat, fill = oxy)) + -->
+<!--    geom_raster() + -->
+<!--    facet_wrap(~year, nrow = 2) + -->
+<!--    scale_fill_viridis() -->
+
+<!-- env_df_comb |> -->
+<!--    filter(year %in% c(2014:2021)) |> -->
+<!--    ggplot(aes(lon, lat, fill = sal)) + -->
+<!--    geom_raster() + -->
+<!--    facet_wrap(~year, nrow = 2) + -->
+<!--    scale_fill_viridis() -->
+
+<!-- env_df_comb |> -->
+<!--    filter(year %in% c(2014:2021)) |> -->
+<!--    ggplot(aes(lon, lat, fill = temp)) + -->
+<!--    geom_raster() + -->
+<!--    facet_wrap(~year, nrow = 2) + -->
+<!--    scale_fill_viridis() -->
+
+<!-- ``` -->
+
+<!-- Save models and use in extracting data for stomach data and pred_grid (scrip 03 and 04) -->
+<!-- ```{r} -->
+<!-- #save -->
+<!-- saveRDS(Mod_oxy4, paste0(home, "/R/prepare-data/Mod_oxy.rds")) -->
+<!-- saveRDS(Mod_sal4, paste0(home, "/R/prepare-data/Mod_sal.rds")) -->
+<!-- saveRDS(Mod_temp3cc, paste0(home, "/R/prepare-data/Mod_temp.rds")) -->
+
+<!-- ``` -->
+

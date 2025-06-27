@@ -1,5 +1,5 @@
 ---
-title: "Prepare stomach content data v.1"
+title: "Prepare stomach content data v.2"
 author: "Viktor Thunell & Max Lindmark"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 format:
@@ -592,8 +592,7 @@ pred <- pred |>
 # Regurgitated stomachs are only about 2% and come from 2021, 2018 and 2013 (and 1 in 1981).
 pred |>
   mutate(Haul_ID = paste(Country, Year, Month, Day, HaulNo, ICESrectangle)) |>
-  summarise(count = n(), .by = c(Haul_ID, Regurgitated_st)) |>
-  mutate(count = n(), .by = c(Year, haul)) |>
+  summarise(count = n(), .by = c(Regurgitated_st, Year)) |>
   filter(Regurgitated_st == 1)
 
 # There are regurgitated stomachs (column in pred) that have information in prey info, i.e. either its incorrect or they have signs of regurgitation but prey in the stomach. These are various prey types from 2018 to 2021. Lets remove these for the rpw analyses.
@@ -1668,6 +1667,7 @@ df |>
 
 ```{r Save}
 # Save data
-write_csv(df, paste0(home, "/data/stomach/stomachs_v1.csv")) # 
+# v2 as of 2025-06-26
+write_csv(df, paste0(home, "/data/stomach/stomachs_v2.csv")) # 
 
 ```
