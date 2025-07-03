@@ -46,7 +46,9 @@ xmax2 <- 916000
 xrange <- xmax2 - xmin2
 
 ymin2 <- 5980000
-ymax2 <- 6450000
+#ymax2 <- 6450000
+ymax2 <- 6645000
+
 yrange <- ymax2 - ymin2
 
 plot_map <- 
