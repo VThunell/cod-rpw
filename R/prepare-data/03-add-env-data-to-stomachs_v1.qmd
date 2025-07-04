@@ -56,6 +56,9 @@ home <- here::here()
 
 dat <- read_csv(paste0(home, "/data/stomach/stomachs_v2.csv"))
 
+plot_map_fc +
+  geom_point(data = dat, aes(X*1000, Y*1000), alpha = 0.5) 
+  
 glimpse(dat)
 ```
 
