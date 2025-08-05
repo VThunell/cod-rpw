@@ -1,0 +1,331 @@
+---
+title: "Tot rpw diff between the long prey group model and the tot rpw  model"
+author: "Viktor Thunell"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: 
+  html:
+    page-layout: full
+    embed-resources: true
+knitr: 
+  opts_chunk:
+    fig.align: center
+    out-width: 80%
+editor: source
+execute: 
+  echo: true
+  eval: true
+  cache: true
+---
+
+## Load libraries
+
+```{r libs}
+#| message: false
+#| warning: false
+#| cache: false
+
+# Load libraries, install if needed
+pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "terra", "mapplots",
+          "viridis", "visreg", "modelr", "future", "kableExtra", "ggh4x",
+          "patchwork", "mgcv", "purrr", "furrr", "beepr", "profmem") 
+
+if(length(setdiff(pkgs,rownames(installed.packages()))) > 0){
+
+    install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
+  
+  }
+#devtools::install_github("pbs-assess/sdmTMB", dependencies = TRUE)
+invisible(lapply(pkgs, library, character.only = T))
+
+#tidyverse_conflicts(only = NULL) # The conflicts between tidylog and dplyr are silly
+#conflict_prefer_all("tidyverse")
+
+# Import some plotting functions
+# Source code for map plots
+# You need:
+# devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+#devtools::source_url("https://raw.githubusercontent.com/VThunell/cod-rpw/main/R/functions/map-plot.R"#)
+options(ggplot2.continuous.colour = "viridis")
+
+library(ggsidekick)
+theme_set(theme_sleek())
+
+# Set path
+home <- here::here()
+```
+
+
+## Read stomach data and prediction grid
+
+```{r}
+#| message: false
+#| warning: false
+#| cache: false
+
+df <- readRDS(paste0(home, "/data/stomach/stom_env_v2.rds")) |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         year_f = as.factor(year),
+         month_f = as.factor(month),
+         ices_rect = as.factor(ices_rect),
+         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
+         doy_sc = (day_of_year - mean(day_of_year))/sd(day_of_year),
+         decade = round(year/10) * 10,
+         oxy_sc = (oxy - mean(oxy, na.rm = TRUE))/sd(oxy, na.rm = TRUE),
+         sal_sc = (sal - mean(sal, na.rm = TRUE))/sd(sal, na.rm = TRUE),
+         temp_sc = (temp - mean(temp, na.rm = TRUE))/sd(temp, na.rm = TRUE)) |> 
+  rowwise() |> 
+  mutate(tot = sum(other, other_inverts, other_chords, saduria, sprat, herring)) |>
+  ungroup()
+
+glimpse(df)
+```
+
+## Filter
+
+```{r}
+# remove empty stomachs and day of year that are NA.  0.27 is 99th percentile
+q99 <- quantile(df$rpw_tot, .99)
+df_q <- df |>
+  filter(rpw_tot > 0 & rpw_tot < q99)
+
+```
+
+## Long prey group (pg) format model (07-)
+
+```{r}
+df_long <- df_q |>
+  pivot_longer(cols = starts_with("rpw") & !contains("tot"),  values_to = "value", names_to = "prey_group") |>
+  filter(!prey_group == "rpw_other") |> # not of interest and small and causes needed ln_smooth_sigma too large 
+  mutate(prey_group_f = as.factor(prey_group),
+         year_sc = (year - mean(year))/sd(year)) |>
+  dplyr::select(prey_group_f, prey_group, value, lat, lon, X, Y, year_sc, year, pred_length_sc, pred_length, doy_sc, depth_sc, sal_sc, temp_sc, oxy_sc)
+
+df_long |>
+  ggplot(aes(year, value)) +
+  geom_point() +
+  facet_wrap(~prey_group, scales = "free_y") +
+  expand_limits(x=c(1960,2020))
+ 
+df_long |>
+  summarise(mean = mean(value), .by = c(year, prey_group)) |>
+  ggplot(aes(year, mean, color = prey_group)) +
+  geom_line() +
+  facet_wrap(~prey_group) +
+  expand_limits(x=c(1960,2020))
+```
+
+### Read in model fit and predict
+
+```{r prey group tot model}
+rpwpg_fit <- readRDS(file = paste0(home, "/R/main-analysis/rpw-pg_Mod_full_JULY20252025-07-05.rds"))
+
+
+rpwpg_fit$formula
+
+df_long %>%
+  filter(pred_length %in% c(15,25,45)) %>%
+  distinct(pred_length_sc) %>%
+  round(3)
+ 
+df_long %>% 
+  distinct(pred_length)
+
+nd_rpwpg <- expand.grid("pred_length_sc" = df_long %>%
+                          filter(pred_length %in% c(15,25,45)) %>%
+                          distinct(pred_length_sc) %>% pull(pred_length_sc) %>%
+                          round(3),
+                        "prey_group_f" = levels(df_long$prey_group_f),
+                        "year_sc" = seq(min(df_long$year_sc),
+                                        max(df_long$year_sc),
+                                        length.out = length(unique(df_long$year)))) 
+
+nd_rpwpg <- nd_rpwpg |>
+  mutate(depth_sc = 0,
+         year = 1993,
+         doy_sc = 0,
+         depth_sc = 0,
+         sal_sc = 0,
+         temp_sc = 0,
+         oxy_sc = 0)
+
+gc()
+time <- Sys.time()
+preds_pg <- predict(rpwpg_fit, newdata = nd_rpwpg, re_form = NA)
+Sys.time() - time
+
+#HERE could I predict w the 8gb?
+preds_pg_b <- preds_pg %>%X
+  mutate(pred_b = exp(est1+est2)) %>% # HERE do i need this or can ii use the est,, check!
+  group_split(year_sc, pred_length_sc) %>%
+  map_dfr(~ add_row(.x, year_sc = first(.x$year_sc), pred_length_sc = first(.x$pred_length_sc), prey_group_f = "rpw_total", pred_b = sum(.x$pred_b))) %>%
+  mutate(norm = (pred_b)/max(pred_b), .by = prey_group_f)
+
+preds_pg_b |>
+  ggplot(aes(year_sc, pred_length_sc, fill = norm)) +
+  geom_raster() +
+  facet_wrap(~prey_group_f) +
+  scale_fill_viridis(trans= "sqrt") +
+  coord_cartesian(expand = 0)
+
+```
+
+### Coeff. estimates pg
+
+```{r}
+# Binomial model (1)
+# Extract random and fixed coefficients from the full model and continous part
+rpwpg_est_1 <- bind_rows(tidy(rpwpg_fit, effects = "ran_par", model = 1, conf.int = TRUE) %>%
+                         filter(term %in% c("sigma_O", "sigma_E")),
+                       tidy(rpwpg_fit, effects = "fixed", model = 1, conf.int = TRUE)  %>%
+                         filter(!grepl('year', term))) %>%
+  mutate(term = factor(term))
+
+# Sort the terms so that random effects are at the top...
+rpwpg_est_1 <- rpwpg_est_1 %>%
+  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
+         model = "binomial")
+
+# Lognormal model (2)
+rpwpg_est_2 <- bind_rows(tidy(rpwpg_fit, effects = "ran_par", model = 2, conf.int = TRUE) %>%
+                         filter(term %in% c("sigma_O", "sigma_E")),
+                       tidy(rpwpg_fit, effects = "fixed", model = 2, conf.int = TRUE)  %>%
+                         filter(!grepl('year', term))) %>%
+
+  mutate(term = factor(term))
+
+# Sort the terms so that random effects are at the top...
+rpwpg_est_2 <- rpwpg_est_2 %>%
+  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
+         model = "lognormal")
+
+p_coeff_pg <- bind_rows(rpwtot_est_1, rpwtot_est_2) |>
+  ggplot(aes( estimate, reorder(term, term2), color = model)) +
+  geom_vline(xintercept = 0, linetype = 2, color = "gray40", alpha = 0.5) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high), width = 0) +
+  geom_point(size = 2.5) +
+  labs(y = "Estimate", x = "Standardized coefficient")
+```
+
+## Total rpw model  (06-)
+
+```{r}
+df_q |> 
+  ggplot() +
+  geom_histogram(aes(x=rpw_tot))
+```
+
+### Fit model 
+
+```{r fit Mods}
+# mesh
+mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 10)
+
+# missing years
+my <- min(df_tot$year):max(df_tot$year)
+missing_years <- my[!my %in% unique(df_tot$year)]
+
+time <- Sys.time()
+rpwtot_fit <-
+  sdmTMB(
+  data = df_tot,
+  formula = rpw_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc + sal_sc + temp_sc + oxy_sc, 
+  # + density_cod_sc,
+  time_varying = ~ 1 + pred_length_sc,
+  extra_time = missing_years,
+  time = "year",
+  mesh = mesh_tot,
+  spatial = "on",
+  spatiotemporal = "iid",
+  family = Gamma(link = "log")
+)
+Sys.time() - time
+
+sanity(rpwtot_fit)
+```
+
+### Predict tot B
+
+```{r}
+nd_rpwtot <- 
+  expand.grid("pred_length_sc" = df_q |> filter(pred_length %in% c(15,25,45)) |>
+                distinct(pred_length_sc) |>
+                round(3),
+              "year_sc" = seq(min(df_q$year_sc),
+                              max(df_q$year_sc),
+                              length.out = length(unique(df_q$year)))
+              )
+
+nd_rpwtot <- nd_rpwtot |>
+  mutate(depth_sc = 0,
+         year = 1993,
+         doy_sc = 0,
+         depth_sc = 0,
+         sal_sc = 0,
+         temp_sc = 0,
+         oxy_sc = 0)
+
+gc()
+time <- Sys.time()
+preds_tot <- predict(rpwtot_fit, newdata = nd_rpwtot, re_form = NA)
+Sys.time() - time
+
+preds_tot_b <- preds_tot %>%
+  mutate(predd = exp(est1+est2)) %>% # HERE do i need this or can ii use the est,, check!
+  
+
+```
+
+### Coeff. estimates tot
+
+```{r}
+# Binomial model (1)
+# Extract random and fixed coefficients from the full model and continous part
+rpwtot_est_1 <- bind_rows(tidy(rpwpg_fit, effects = "ran_par", model = 1, conf.int = TRUE) %>%
+                         filter(term %in% c("sigma_O", "sigma_E")),
+                       tidy(rpwpg_fit, effects = "fixed", model = 1, conf.int = TRUE)  %>%
+                         filter(!grepl('year', term))) %>%
+  mutate(term = factor(term))
+
+# Sort the terms so that random effects are at the top...
+rpwtot_est_1 <- rpwtot_est_1 %>%
+  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
+         model = "binomial")
+
+# Lognormal model (2)
+rpwtot_est_2 <- bind_rows(tidy(rpwpg_fit, effects = "ran_par", model = 2, conf.int = TRUE) %>%
+                         filter(term %in% c("sigma_O", "sigma_E")),
+                       tidy(rpwpg_fit, effects = "fixed", model = 2, conf.int = TRUE)  %>%
+                         filter(!grepl('year', term))) %>%
+  mutate(term = factor(term))
+
+# Sort the terms so that random effects are at the top...
+rpwtot_est_2 <- rpwtot_est_2 %>%
+  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
+         model = "lognormal")
+
+p_coeff_tot <- bind_rows(rpwtot_est_1, rpwtot_est_2) |>
+  ggplot(aes( estimate, reorder(term, term2), color = model)) +
+  geom_vline(xintercept = 0, linetype = 2, color = "gray40", alpha = 0.5) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high), width = 0) +
+  geom_point(size = 2.5) +
+  labs(y = "Estimate", x = "Standardized coefficient")
+
+```
+
+## Compare long pg and tot
+```{r}
+preds_pg_b |>
+  filter(prey_group_f == "rpw_tot") |>
+  mutate(model = "pg") |>
+  bind_rows(preds_tot_b |> mutate(model = "pg")) |>
+  ggplot(aes(year_sc, predd, color = model)) +
+  geom_line() +
+  facet_wrap(~pred_length_sc) +
+  scale_color_viridis(trans= "sqrt")
+
+p_coeff_pg + p_coeff_tot + plot_layout(guides='collect')
+  
+```
+
+
+
