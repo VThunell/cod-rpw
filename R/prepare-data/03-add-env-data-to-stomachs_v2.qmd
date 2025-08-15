@@ -28,7 +28,7 @@ This script add enviromental information (depth and bottom oxygen, temperature a
 ```{r lib}
 #| message: false
 
-pkgs <- c("tidyverse", "tidylog", "sp", "raster", "devtools", "RCurl", "sdmTMB", "purrr", "terra", "ncdf4", "chron", "ncdf4", "tidyterra") 
+pkgs <- c("tidyverse", "tidylog", "sp", "raster", "devtools", "RCurl", "sdmTMB", "purrr", "terra", "ncdf4", "chron", "ncdf4", "tidyterra", "tidymodels") 
 
 if(length(setdiff(pkgs, rownames(installed.packages()))) > 0){
 
@@ -44,8 +44,10 @@ devtools::source_url("https://raw.githubusercontent.com/VThunell/cod-rpw/main/R/
 # Set path
 home <- here::here()
 
-# conflöciting packages
-conflicts_prefer(tidylog::left_join)
+# conflicting packages
+
+tidymodels_prefer(quiet = TRUE)
+conflicts_prefer(dplyr::left_join, dplyr::mutate, dplyr::filter, dplyr::select, dplyr::summarise)
 ```
 
 ## Read data
@@ -171,7 +173,7 @@ sum(is.na(dat_env_all$oxy))
 
 # Plot & save
 
-```{r add oxysaltemp}
+```{r p and s}
 # check plots
 plot_map_fc +
   geom_point(data = dat_env_all, aes(X*1000, Y*1000, color = oxy), alpha = 0.5) +

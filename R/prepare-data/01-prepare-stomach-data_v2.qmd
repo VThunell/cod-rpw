@@ -628,7 +628,7 @@ unique(is.na(prey3 |> dplyr::select(all_of(comcol_prey_pred))))
 # Rename "Notes" in prey data to avoid confusion as to which dataset it belongs to
 prey3 <- prey3 |> rename(prey_notes = Notes)
 
-# Join in pred info into prey. There are rows only in pred (y) that are not in prey. These are either empty, regurgitated or incorrect. Empties will be added later. We go from 50 000 prey to 62 000 obsevervations
+# Join in pred3 info into prey. There are rows only in pred3 (y) that are not in prey. These are either empty, regurgitated or incorrect. Empties will be added later. We go from 50 000 prey to 62 000 obsevervations
 new_db <- left_join(pred3, prey3, by = c(comcol_prey_pred))
 
 ```
@@ -800,7 +800,7 @@ With these estimates of weight based on either length and in a very few cases av
 new_pg <- new_db5 |> 
   summarise(prey_tot_weight = sum(prey_weight), .by = c(tblPredatorInformationID, prey_group)) |>
   filter(prey_tot_weight > 0)
-  
+
 # No NAs which seems good
 sum(is.na(new_pg$prey_group))
 sum(is.na(new_pg$prey_tot_weight))
@@ -822,7 +822,8 @@ Next I will `left_join` in the remaining predator information, and after that `b
 
 ```{r join in predator info NDB}
 new_pg_pred <- new_pg |>
-  left_join(pred, by = "tblPredatorInformationID")
+  left_join(pred |> rename(pred_length = Length, 
+                           pred_weight = IndWgt), by = "tblPredatorInformationID")
 
 # two empty stomachs
 new_pg_pred |>
@@ -832,7 +833,7 @@ new_pg_pred |>
 
 ```
 
-Now add in the "empty stomachs" from pred using bind_rows. When I `bind_rows`, the columns that are not matching get `NA`. The only column not matching should be the average weight columns. They will get `NA`, and I'll change it to 0.
+Now add in the "empty stomachs" from pred3 using bind_rows. When I `bind_rows`, the columns that are not matching get `NA`. The only column not matching should be the average weight columns. They will get `NA`, and I'll change it to 0.
 
 ### Bind in empty stomachs
 
@@ -859,7 +860,7 @@ new_dat2 <- new_dat |>
          other_chords = replace_na(other_chords, 0))
 
 # Fix that Denmark report in kg
-new_dat |>
+new_dat2 |>
   ggplot(aes(pred_weight, fill = Country)) + 
   facet_wrap(~Country, scales = "free") + 
   geom_histogram() +
@@ -1062,7 +1063,7 @@ missing_db4 |>
   filter(prey_length > 0 | prey_weight > 0) |> 
   summarise(fix = unique(Stomach_Item))
 
-# where we lack latin name and there is a stomach item, use stomach item as latinname
+# where we lack latin name and there is a stomach item, use stomach item as latin name
 missing_db5 <- missing_db4 |>
   mutate(Prey_LatinName = if_else(!is.na(Prey_LatinName) & !is.na(Stomach_Item), Prey_LatinName, Stomach_Item))
 
@@ -1551,7 +1552,7 @@ plot_map_fc +
   geom_point(data = all_data5[onland,] |> add_utm_columns(ll_names = c("lon", "lat"), utm_crs = 32633), aes(X*1000, Y*1000), color="red") +
   theme_sleek(base_size = 6)
 
-# remove the point on land
+# remove the point on land (7500 stomachs)
 all_data6 <- all_data5[!onland,]
 
 #remove points outside the Baltic, i.e. the western most points in:

@@ -62,7 +62,20 @@ home <- here::here()
 #| warning: false
 #| cache: false
 
-df <- readRDS(paste0(home, "/data/stomach/stom_env_v2.rds")) |>
+df <- readRDS(paste0(home, "/data/stomach/stom_env_v2.rds"))
+
+glimpse(df)
+```
+
+## Filter and fix covars
+
+```{r}
+# remove empty stomachs and day of year that are NA.  0.27 is 99th percentile
+q99 <- quantile(df$rpw_tot, .99)
+
+df_q <- df |>
+  filter(rpw_tot > 0 & rpw_tot < q99) |>
+  # and then 
   mutate(depth_sc = (depth - mean(depth))/sd(depth),
          year_f = as.factor(year),
          month_f = as.factor(month),
@@ -76,18 +89,6 @@ df <- readRDS(paste0(home, "/data/stomach/stom_env_v2.rds")) |>
   rowwise() |> 
   mutate(tot = sum(other, other_inverts, other_chords, saduria, sprat, herring)) |>
   ungroup()
-
-glimpse(df)
-```
-
-## Filter
-
-```{r}
-# remove empty stomachs and day of year that are NA.  0.27 is 99th percentile
-q99 <- quantile(df$rpw_tot, .99)
-df_q <- df |>
-  filter(rpw_tot > 0 & rpw_tot < q99)
-
 ```
 
 ## Long prey group (pg) format model (07-)
@@ -117,11 +118,42 @@ df_long |>
 ### Read in model fit and predict
 
 ```{r prey group tot model}
-rpwpg_fit <- readRDS(file = paste0(home, "/R/main-analysis/rpw-pg_Mod_full_JULY20252025-07-05.rds"))
+#rpwpg_fit <- readRDS(file = paste0(home, "/R/main-analysis/rpw-pg_Mod_full_JULY20252025-07-05.rds"))
+
+#rpwpg_fit$spde
+mesh_long <- make_mesh(df_long, c("X", "Y"), cutoff = 15)
+plot(mesh_long)
+
+# missing years
+my <- min(df_long$year):max(df_long$year)
+missing_years <- my[!my %in% unique(df_long$year)]
+
+gc()
+time <- Sys.time()
+rpwpg_fit <-
+  sdmTMB(
+  data = df_long,
+  mesh = mesh_long,
+  formula = value ~
+    prey_group_f +
+    s(pred_length_sc, year_sc, by = prey_group_f, k = 25) +
+    s(doy_sc, bs = "cc", k = 6) +
+    depth_sc +
+    sal_sc +
+    temp_sc +
+    oxy_sc,
+  time = "year",
+  extra_time = missing_years,
+  spatial = "off",
+  spatiotemporal = "iid",
+  spatial_varying = ~ 0 + prey_group_f,
+  family = delta_lognormal(type = "poisson-link")
+)
+time - Sys.time()
+```
 
 
-rpwpg_fit$formula
-
+```{r predict}
 df_long %>%
   filter(pred_length %in% c(15,25,45)) %>%
   distinct(pred_length_sc) %>%
@@ -153,16 +185,17 @@ time <- Sys.time()
 preds_pg <- predict(rpwpg_fit, newdata = nd_rpwpg, re_form = NA)
 Sys.time() - time
 
-#HERE could I predict w the 8gb?
-preds_pg_b <- preds_pg %>%X
-  mutate(pred_b = exp(est1+est2)) %>% # HERE do i need this or can ii use the est,, check!
+preds_pg_b <- preds_pg %>%
+  mutate(pred = exp(est)) %>%
   group_split(year_sc, pred_length_sc) %>%
-  map_dfr(~ add_row(.x, year_sc = first(.x$year_sc), pred_length_sc = first(.x$pred_length_sc), prey_group_f = "rpw_total", pred_b = sum(.x$pred_b))) %>%
-  mutate(norm = (pred_b)/max(pred_b), .by = prey_group_f)
+  map_dfr(~ add_row(.x, year_sc = first(.x$year_sc), pred_length_sc = first(.x$pred_length_sc), prey_group_f = "rpw_total", pred = sum(.x$pred))) %>%
+  mutate(norm = pred/max(pred),  .by = prey_group_f) |>
+  mutate(year = year_sc*sd(df_q$year) + mean(df_q$year),
+         pred_length = round(pred_length_sc*sd(df_q$pred_length) + mean(df_q$pred_length)))
 
 preds_pg_b |>
-  ggplot(aes(year_sc, pred_length_sc, fill = norm)) +
-  geom_raster() +
+  ggplot(aes(year, norm, color = factor(pred_length))) +
+  geom_line() +
   facet_wrap(~prey_group_f) +
   scale_fill_viridis(trans= "sqrt") +
   coord_cartesian(expand = 0)
@@ -198,7 +231,7 @@ rpwpg_est_2 <- rpwpg_est_2 %>%
   mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
          model = "lognormal")
 
-p_coeff_pg <- bind_rows(rpwtot_est_1, rpwtot_est_2) |>
+p_coeff_pg <- bind_rows(rpwpg_est_1, rpwpg_est_2) |>
   ggplot(aes( estimate, reorder(term, term2), color = model)) +
   geom_vline(xintercept = 0, linetype = 2, color = "gray40", alpha = 0.5) +
   geom_errorbar(aes(xmin = conf.low, xmax = conf.high), width = 0) +
@@ -218,16 +251,16 @@ df_q |>
 
 ```{r fit Mods}
 # mesh
-mesh_tot <- make_mesh(df_tot, c("X", "Y"), cutoff = 10)
+mesh_tot <- make_mesh(df_q, c("X", "Y"), cutoff = 10)
 
 # missing years
-my <- min(df_tot$year):max(df_tot$year)
-missing_years <- my[!my %in% unique(df_tot$year)]
+my <- min(df_q$year):max(df_q$year)
+missing_years <- my[!my %in% unique(df_q$year)]
 
 time <- Sys.time()
 rpwtot_fit <-
   sdmTMB(
-  data = df_tot,
+  data = df_q,
   formula = rpw_tot ~ 0 + s(doy_sc, bs = "cc") + depth_sc + sal_sc + temp_sc + oxy_sc, 
   # + density_cod_sc,
   time_varying = ~ 1 + pred_length_sc,
@@ -247,17 +280,19 @@ sanity(rpwtot_fit)
 
 ```{r}
 nd_rpwtot <- 
-  expand.grid("pred_length_sc" = df_q |> filter(pred_length %in% c(15,25,45)) |>
-                distinct(pred_length_sc) |>
-                round(3),
-              "year_sc" = seq(min(df_q$year_sc),
-                              max(df_q$year_sc),
-                              length.out = length(unique(df_q$year)))
+  expand.grid("pred_length_sc" = df_q |> 
+                filter(pred_length %in% c(15,25,45)) |>
+                distinct(pred_length_sc) |> pull(pred_length_sc) %>%
+                         round(3),
+              # "year" = seq(min(df_q$year), max(df_q$year),
+              #              length.out = length(unique(df_q$year)))
+              "year" = seq(min(df_q$year), max(df_q$year),
+                           by = 1)
               )
 
 nd_rpwtot <- nd_rpwtot |>
   mutate(depth_sc = 0,
-         year = 1993,
+         #year = 1993,
          doy_sc = 0,
          depth_sc = 0,
          sal_sc = 0,
@@ -270,7 +305,7 @@ preds_tot <- predict(rpwtot_fit, newdata = nd_rpwtot, re_form = NA)
 Sys.time() - time
 
 preds_tot_b <- preds_tot %>%
-  mutate(predd = exp(est1+est2)) %>% # HERE do i need this or can ii use the est,, check!
+  mutate(pred = exp(est))
   
 
 ```
@@ -315,16 +350,19 @@ p_coeff_tot <- bind_rows(rpwtot_est_1, rpwtot_est_2) |>
 ## Compare long pg and tot
 ```{r}
 preds_pg_b |>
-  filter(prey_group_f == "rpw_tot") |>
+  filter(prey_group_f == "rpw_total") |>
+  select(-prey_group_f) |>
   mutate(model = "pg") |>
-  bind_rows(preds_tot_b |> mutate(model = "pg")) |>
-  ggplot(aes(year_sc, predd, color = model)) +
+  bind_rows(preds_tot_b |> mutate(model = "tot")) |>
+  mutate(pred_length = round(pred_length_sc*sd(df_q$pred_length) + mean(df_q$pred_length))) |>
+  ggplot(aes(year, pred, color = model)) +
   geom_line() +
-  facet_wrap(~pred_length_sc) +
-  scale_color_viridis(trans= "sqrt")
+  facet_wrap(~pred_length)
 
 p_coeff_pg + p_coeff_tot + plot_layout(guides='collect')
   
+AIC(rpwpg_fit)
+AIC(rpwtot_fit)
 ```
 
 
