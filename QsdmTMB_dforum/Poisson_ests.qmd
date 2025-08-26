@@ -1,0 +1,126 @@
+---
+title: "Prediction estimates from poisson link delta model"
+author: "Viktor Thunell"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: 
+  html:
+    page-layout: full
+    embed-resources: true
+knitr: 
+  opts_chunk:
+    fig.align: center
+    out-width: 80%
+editor: source
+execute: 
+  echo: true
+  eval: true
+  cache: true
+---
+
+# Intro
+
+When predicting from a poisson link delta model, I cant figure out how the combined "est" relates to the model component est1 and est2.
+
+Using the example here: https://pbs-assess.github.io/sdmTMB/articles/web_only/poisson-link.html
+
+## Load libraries
+
+```{r libs}
+#| message: false
+#| warning: false
+#| cache: false
+
+# Load libraries, install if needed
+pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "sdmTMBextra", "terra", "mapplots",
+          "viridis") 
+
+if(length(setdiff(pkgs,rownames(installed.packages()))) > 0){
+
+    install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
+  
+  }
+
+invisible(lapply(pkgs, library, character.only = T))
+
+options(ggplot2.continuous.colour = "viridis")
+
+remotes::install_github("pbs-assess/sdmTMB", dependencies = TRUE)
+library(sdmTMB)
+library(ggsidekick)
+theme_set(theme_sleek())
+
+# Set path
+home <- here::here()
+```
+
+
+## Fit model and predict model
+
+```{r}
+#| output: false
+
+dogfish$log_depth <- log(dogfish$depth)
+mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 10)
+
+fit_dpg <- sdmTMB(catch_weight ~ 0 + as.factor(year) + s(log_depth),
+  family = delta_gamma(type = "poisson-link"),
+  spatial = "on",
+  mesh = mesh,
+  data = dogfish,
+  anisotropy = TRUE,
+  reml = TRUE,
+  offset = log(dogfish$area_swept),
+  silent = FALSE
+)
+```
+
+
+```{r}
+nd <- expand.grid(
+  log_depth = seq(min(dogfish$log_depth), max(dogfish$log_depth), length.out = 200),
+  year = as.factor(unique(dogfish$year))
+)
+
+nd2010 <- dplyr::filter(nd, year == 2010)
+p_dpg <- predict(fit_dpg, newdata = nd2010, re_form = NA)
+p_dpg2 <- p_dpg |>
+  mutate(p_exp_1plus2 = exp(est1+est2),  # correct!?
+         p_exp_est = exp(est), # correct!?
+         p_exp1_times_exp2 = exp(est1)*exp(est2), # why is this not equal to p_exp_1plus2
+         p_1plus2 = est1+est2, # why is this not equal p_est
+         p_est = est
+         ) %>%
+  pivot_longer(cols = contains("p_"),  values_to = "value", names_to = "est_type") %>%
+  mutate(mean_est = mean(value), .by = est_type,
+         cent_value = value/mean_est)
+
+p_dpg2 %>%
+  ggplot() +
+  geom_line(aes(log_depth, cent_value, colour = est_type, linetype = est_type)) +
+  ylab("log expected catch weight")
+
+p_dpg2 %>%
+  ggplot() +
+  geom_line(aes(log_depth, cent_value, colour = est_type, linetype = est_type)) +
+  ylab("log expected catch weight")
+
+```
+According to https://pbs-assess.github.io/sdmTMB/articles/web_only/poisson-link.html, n*w below should be "equivalently exp(est1 + est2)". This is not the case above!
+I don't understand why exp(est1)*exp(est2) (p_exp1_times_exp2) is not equal to exp(est1 + est2) (p_exp_1plus2)
+
+```{r}
+
+n <- exp(p_dpg$est1)
+w <- exp(p_dpg$est2)
+p <- 1 - exp(-n)
+r <- (n * w) / p
+
+lims <- c(0, max(p * r))
+plot(n * w, p * r, xlim = lims, ylim = lims)
+abline(0, 1)
+
+```
+ 
+**Importantly, in my model exp(est) is not equal to exp(est1+est2)** The exp(est) way off for some prey_groups 
+
+

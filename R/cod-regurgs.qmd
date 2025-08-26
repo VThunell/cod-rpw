@@ -1,0 +1,256 @@
+---
+title: "Cod Regurgs v.1"
+author: "Viktor Thunell"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format:
+  html:
+    embed-resources: true
+    fig-width: 8
+knitr: 
+  opts_chunk:
+    fig.align: center
+editor: source
+execute: 
+  echo: true
+  eval: true
+  cache: false
+---
+
+## Load libraries
+  
+```{r libs}
+#| message: false
+
+pkgs <- c("tidyverse", "tidylog", "devtools","viridis","nls.multstart", "broom", "patchwork", "rjags", "coda", "boot", "tidybayes","bayesplot")
+
+
+if(length(setdiff(pkgs, rownames(installed.packages()))) > 0){
+  
+  install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
+  
+}
+
+invisible(lapply(pkgs, library, character.only = T))
+
+# Source code for map plots
+devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
+
+options(ggplot2.continuous.colour = "viridis")
+
+# Set path
+home <- here::here()
+```
+
+## 1. Read data
+
+Stomach content data
+  i) current data from ICES stomach database (new data base, NDB)
+  ii) Old database (ODB) data (since many observations are missing from the NDB)
+  iii) Additional newer data (SE)
+
+Additional information 
+  i) BITS haul information from DATRAS
+  ii) length-weight coefficients from publication
+  
+
+```{r data}
+# New database data, NDB are divided into four sheets
+# New data from January 2024 for Latvia: StomachContent_0115213707
+# New data (October 2024) that contains less stomachs for Other countries: StomachContent_1021080172
+
+fi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/File_information.csv")) |> filter(Country == "LV") |>
+  bind_rows(read_csv(paste0(home, "/data/stomach/StomachContent_1021080172/File_information.csv")) |> filter(!Country == "LV"))
+
+# For the other three sheets for the NDB we use the tblUploadID for excluding and including LV.
+hi <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/HaulInformation.csv"),
+               col_types = list(
+                 tblUploadID = col_double(),
+                 tblHaulID = col_double(),
+                 Ship = col_character(),
+                 Gear = col_character(),
+                 HaulNo = col_double(),
+                 StationNumber = col_double(),
+                 Year = col_double(),
+                 Month = col_double(),
+                 Day = col_double(),
+                 Time = col_character(),
+                 ShootLat = col_double(),
+                 ShootLong = col_double(),
+                 HaulLat = col_double(),
+                 HaulLong = col_double(),
+                 ICESrectangle = col_character(),
+                 Depth = col_double(),
+                 Survey = col_character(),
+                 ICESDatabase = col_character(),
+                 Notes =  col_character())) |> # the parsing issues of hi causes no problems but specifying col_types corrects the datatypes 
+  filter(tblUploadID %in% (fi |> filter(Country == "LV") |> pull(tblUploadID))) |>
+  bind_rows(read_csv(paste0(home, "/data/stomach/StomachContent_1021080172/HaulInformation.csv"),
+               col_types = list(
+                 tblUploadID = col_double(),
+                 tblHaulID = col_double(),
+                 Ship = col_character(),
+                 Gear = col_character(),
+                 HaulNo = col_double(),
+                 StationNumber = col_double(),
+                 Year = col_double(),
+                 Month = col_double(),
+                 Day = col_double(),
+                 Time = col_character(),
+                 ShootLat = col_double(),
+                 ShootLong = col_double(),
+                 HaulLat = col_double(),
+                 HaulLong = col_double(),
+                 ICESrectangle = col_character(),
+                 Depth = col_double(),
+                 Survey = col_character(),
+                 ICESDatabase = col_character(),
+                 Notes =  col_character())) |>
+              filter(tblUploadID %in% (fi |> filter(!Country == "LV") |> pull(tblUploadID)))) 
+
+pred <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PredatorInformation_edit.csv")) |> # edited in text editor (not excel or equivalent) to remove three instances of erroneous '"' in column 'Notes' at row 7139,7144 and 7296. 
+  filter(tblUploadID %in% (fi |> filter(Country == "LV") |> pull(tblUploadID))) |>
+  bind_rows(read_csv(paste0(home, "/data/stomach/StomachContent_1021080172/PredatorInformation.csv")) |> filter(tblUploadID %in% (fi |> filter(!Country == "LV") |> pull(tblUploadID))))
+  
+prey <- read_csv(paste0(home, "/data/stomach/StomachContent_0115213707/PreyInformation.csv")) |>
+  filter(tblUploadID %in% (fi |> filter(Country == "LV") |> pull(tblUploadID))) |>
+  bind_rows(read_csv(paste0(home, "/data/stomach/StomachContent_1021080172/PreyInformation.csv")) |> filter(tblUploadID %in% (fi |> filter(!Country == "LV") |> pull(tblUploadID))))
+
+```
+
+
+## 3. New database data
+  
+```{r glimpse NDB}
+names(fi)
+names(hi)
+names(pred)
+names(prey)
+```
+
+Join all data files (new db) in a specific order: fi -> hi -> pred -> prey.
+
+For some joins, there are multiple column names shared in addition to the key that I could remove and keep only the ID key and the non-shared columns but instead I keep them. First I need to ensure they are the same (VT what is the same and how do you do this?), and not only have the same name. Will also check if both datasets have the same amount of NA before choosing which column to carry from which dataset.
+
+```{r join hi, fi and pred NDB}
+hifi <- left_join(hi, fi, by = "tblUploadID") # join haul data with file info
+
+comcol_hifi_pred <- intersect(colnames(pred), colnames(hifi))
+
+# Check if any of the two datasets have NA in the common columns which can screw up joining dfs
+unique(is.na(hifi |> dplyr::select(all_of(comcol_hifi_pred))))
+unique(is.na(pred |> dplyr::select(all_of(comcol_hifi_pred))))
+
+# The column Notes does have NAs and different meanings in hi and fi so we will remove Notes before joining
+pred <- left_join(pred |> dplyr::select(-Notes), # join in predator data
+                  hifi |> dplyr::select(-Notes),
+                  by = comcol_hifi_pred[!comcol_hifi_pred == "Notes"])
+```
+
+### Fix pred regurgitated stomachs
+
+```{r join in prey NDB}
+# In the Swedish data, 2 means regurgitated and 1 is intact, but for the rest, 1 means regurgitated, 0 or NA means intact. All NA values are from 2020 and 2021 and for all regurguitated=0 before 2005 (see Neuenfeldt 2020 discussion, https://doi.org/10.1093/icesjms/fsz224). So we dont know if they are truly not regurgitated. Therefore there is not much info of value from the regurgitated column. 
+
+pred |>
+  filter(Country == "SE") |>
+  mutate(regurg_f = as.factor(Regurgitated)) |>
+  summarise(regy = n(), .by = c(Year, regurg_f))
+
+pred <- pred |>
+  mutate(Regurgitated_st = Regurgitated,
+         Regurgitated_st = if_else(Country == "SE" & Regurgitated == 1, 0, Regurgitated_st),
+         Regurgitated_st = if_else(Country == "SE" & Regurgitated == 2, 1, Regurgitated_st),
+         Regurgitated_st = replace_na(Regurgitated_st, 0))
+
+# There are regurgitated stomachs (column in pred) that have information in prey info, i.e. either its incorrect or they have signs of regurgitation but prey in the stomach. These are various prey types from 2018 to 2021. Lets remove these for the rpw analyses.
+# regurg_ids <- pred |>
+#   filter(Regurgitated_st == 1) 
+# prey |> filter(tblPredatorInformationID %in% regurg_ids$tblPredatorInformationID) |> distinct(Weight, AphiaIDPrey, Year) |> as.data.frame()
+# 
+# # Remove regurgitated stomachs from pred and prey to reduce issues with the relative prey weight becoming incorrect.
+# pred2 <- pred |>
+#   filter(!tblPredatorInformationID %in% regurg_ids$tblPredatorInformationID)
+# prey2 <- prey |>
+#   filter(!tblPredatorInformationID %in% regurg_ids$tblPredatorInformationID)
+
+```
+
+```{r}
+# regurgitation counts by haul
+pred %>%
+  filter(Year > 2005) %>%
+  mutate(Haul_ID = paste(Country, Year, Month, Day, HaulNo, ICESrectangle)) |>
+  mutate(N=n(), .by = Haul_ID) |>
+  filter(Regurgitated_st  == 1) %>%
+  mutate(n=n(), .by = Haul_ID) |>
+  select(Haul_ID, Regurgitated_st, n, N) #%>%
+  
+```
+
+```{r}
+# data <- pred %>%
+#   filter(Year > 2005) %>%
+#   summarise(n=n(), .by = Regurgitated_st) |>
+#   mutate(N=sum(n)) %>%
+#   filter(Regurgitated_st  == 1)
+
+data <- pred %>%
+  filter(Year > 2005) %>%
+  mutate(Haul_ID = paste(Country, Year, Month, Day, HaulNo, ICESrectangle)) |>
+  mutate(N=n(), .by = Haul_ID) |>
+  filter(Regurgitated_st  == 1) %>%
+  mutate(n=n(), .by = Haul_ID) |>
+  select(Haul_ID, Regurgitated_st, n, N) #%>%
+
+n_reg <- data %>% pull(n) %>% sum()#number success
+n <- data %>% pull(N) %>% sum()#number success
+
+# Spec model (BUGS-language description)
+regrate_model_1 <- "model{ 
+    # Likelihood model for X number of regurgs
+    X ~ dbin(p[i], n[i])
+    
+    # Prior model for p
+    p ~ dbeta(a, b)
+}"
+
+# Build the model    
+regrate_jags <- jags.model(textConnection(regrate_model_1), 
+    data = list(a = 1, b = 1, X = n_reg, n = n),
+    n.chains = 2,
+    inits = list(p=0.5)
+  )
+
+# mcmc burn-in
+burn.in=10000
+update(regrate_jags, n.iter=burn.in)
+
+# produce more samples and a mcmc.list object
+iters=50000
+n.thin=10
+
+samples = coda.samples(regrate_jags, 
+                       variable.names = "p",
+                       #variable.names = c("b1","alpha","est_a2","est_a3"),
+                       n.iter = iters,
+                       thin = n.thin)
+summary(samples)
+mcmc_trace(samples)
+
+gelman.diag(samples) # "approximate convergence is diagnosed when the upper limit is close to 1"
+# doesnt work when predictions are in the samples...
+
+mcmc_intervals(samples)
+
+# age_ad seems to be equal to ag_ad2 so I can just rename the group levels 
+#sal_ind4 %>% mutate(age_ad2 = as.numeric(as.factor(age_ad))) %>% select(age_ad, age_ad2) %>% distinct()
+
+gather_draws(samples, p) %>% filter(.chain == 1) %>%
+  mutate(median = median(.value)) %>%
+  ggplot() + 
+  geom_density(aes(x = .value)) + # age parameter i
+  theme_light() +
+  geom_text(aes(x = min(.value)+0.001, y = 150, label = paste0("median:", round(median, 4))))
+
+```
+
