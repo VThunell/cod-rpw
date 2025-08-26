@@ -1,0 +1,250 @@
+---
+title: "Comparison of two models on total feeding ratio using different lenght-weight coefficients"
+author: "Viktor Thunell"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: 
+  html:
+    page-layout: full
+    embed-resources: true
+knitr: 
+  opts_chunk:
+    fig.align: center
+    out-width: 80%
+editor: source
+execute: 
+  echo: true
+  eval: true
+  cache: true
+---
+
+## Load libraries
+
+```{r libs}
+#| message: false
+#| warning: false
+#| cache: false
+
+# Load libraries, install if needed
+pkgs <- c("tidyverse", "tidylog", "devtools", "sdmTMB", "sdmTMBextra", "terra", "mapplots",
+          "viridis", "visreg", "modelr", "future", "kableExtra", "ggh4x", "patchwork",
+          "purrr", "furrr", "beepr") 
+
+if(length(setdiff(pkgs,rownames(installed.packages()))) > 0){
+
+    install.packages(setdiff(pkgs, rownames(installed.packages())), dependencies = T)
+  
+  }
+
+invisible(lapply(pkgs, library, character.only = T))
+
+# Import some plotting functions
+# Source code for map plots
+# You need:
+# devtools::install_github("seananderson/ggsidekick") # not on CRAN; library(ggsidekick)
+devtools::source_url("https://raw.githubusercontent.com/VThunell/Lammska_cod-fr/main/R/functions/map-plot.R")
+options(ggplot2.continuous.colour = "viridis")
+
+library(ggsidekick)
+theme_set(theme_sleek())
+
+# Set path
+home <- here::here()
+```
+
+
+## Read stomach data and prediction grid
+
+```{r}
+#| message: false
+#| warning: false
+#| cache: false
+
+#df <- read_csv(paste0(home, "/data/clean/stom_env.csv")) |>
+df <- readRDS(paste0(home, "/data/clean/stom_env_v1.rds")) |>
+  mutate(depth_sc = (depth - mean(depth))/sd(depth),
+         year_f = as.factor(year),
+         month_f = as.factor(month),
+         ices_rect = as.factor(ices_rect),
+         pred_length_sc = (pred_length - mean(pred_length)) / sd(pred_length),
+         doy_sc = ifelse(!is.na(day_of_year), (day_of_year - mean(day_of_year, na.rm = TRUE))/sd(day_of_year, na.rm = TRUE), NA)) |>
+  rowwise() |> 
+  mutate(tot = sum(other, other_inverts, other_chords, saduria, sprat, herring)
+) |> ungroup()
+
+glimpse(df)
+
+#pred_grid <- readRDS(paste0(home, "/data/clean/pred_grid.rds"))
+# pred_grid <- bind_rows(readRDS(paste0(home, "/data/clean/pred_grid_(1_2).rds")),
+#                        readRDS(paste0(home, "/data/clean/pred_grid_(2_2).rds")))
+# pred_grid <- bind_rows(read_csv(paste0(home, "/data/clean/pred_grid_(1_2)_max.csv")),
+#                        read_csv(paste0(home, "/data/clean/pred_grid_(2_2)_max.csv")))
+
+#plot_map +
+ # geom_raster(data = pred_grid, aes(X*1000, Y*1000, fill = depth))
+
+```
+
+## Filter
+
+```{r}
+
+# remove empty stomachs and day of year that are NA.  0.37 is 99th percentile
+q99 <- quantile(df$fr_tot, .99)
+df_tot <- df |> 
+  filter(fr_tot > 0 & fr_tot < q99)
+
+# For env data model
+df_tot_env <- df_tot |>
+  mutate(fr_tot_sqrt = sqrt(fr_tot),
+         fr_tot_fb_sqrt = sqrt(fr_tot_fb),
+         decade = round(year/10) * 10,
+         oxy_sc = (oxy - mean(oxy, na.rm = TRUE))/sd(oxy, na.rm = TRUE),
+         sal_sc = (sal - mean(sal, na.rm = TRUE))/sd(sal, na.rm = TRUE),
+         temp_sc = (temp - mean(temp, na.rm = TRUE))/sd(temp, na.rm = TRUE),
+         year_sc = (year - mean(year))/sd(year))
+
+```
+
+# Fit two models comparing fb and time varying using pred_weight and compare model with 
+```{r}
+# mesh 
+mesh_tot <- make_mesh(df_tot_env, c("X", "Y"), cutoff = 25)
+plot(mesh_tot)
+
+# missing years
+my <- min(df_tot_env$year):max(df_tot_env$year)
+missing_years <- my[!my %in% unique(df_tot_env$year)]
+
+
+time <- Sys.time()
+Mod_fb<-
+  sdmTMB(
+  data = df_tot_env,
+  mesh = mesh_tot,
+  formula = fr_tot_fb_sqrt ~ 0 +
+    s(pred_length_sc, year_sc) +
+    s(doy_sc, bs = "cc") +
+    depth_sc +
+    sal_sc +
+    temp_sc +
+    oxy_sc,
+  time = "year",
+  extra_time = missing_years,
+  spatial = "on",
+  spatiotemporal = "off",
+  family = Gamma(link="log")
+)
+time - Sys.time()
+
+
+time <- Sys.time()
+Mod_tv <-
+  sdmTMB(
+  data = df_tot_env,
+  mesh = mesh_tot,
+  formula = fr_tot_sqrt ~ 0 +
+    s(pred_length_sc, year_sc) +
+    s(doy_sc, bs = "cc") +
+    depth_sc +
+    sal_sc +
+    temp_sc +
+    oxy_sc,
+  time = "year",
+  extra_time = missing_years,
+  spatial = "on",
+  spatiotemporal = "off",
+  family = Gamma(link="log")
+)
+time - Sys.time()
+
+sanity(Mod_fb)
+sanity(Mod_tv)
+
+```
+
+
+# Coefficient estimates
+
+```{r coeff est}
+## Plot coefficient estimates
+mfb_est <- bind_rows(tidy(Mod_fb, effects = "ran_par", conf.int = TRUE) %>%
+                         filter(term %in% c("sigma_O", "sigma_E")),
+                       tidy(Mod_fb, effects = "fixed", conf.int = TRUE)  %>% 
+                         filter(!grepl('year', term))) %>%
+  mutate(term = factor(term))
+
+mtv_est <- bind_rows(tidy(Mod_tv, effects = "ran_par", conf.int = TRUE) %>%
+                         filter(term %in% c("sigma_O", "sigma_E")),
+                       tidy(Mod_tv, effects = "fixed", conf.int = TRUE)  %>% 
+                         filter(!grepl('year', term))) %>%
+  mutate(term = factor(term))
+
+bind_rows(mfb_est |> mutate(lw_source = "fb"), mtv_est |> mutate(lw_source = "tv")) |>
+  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1)) |>
+  ggplot(aes( estimate, term, color = lw_source)) +
+  geom_vline(xintercept = 0, linetype = 2, color = "gray40", alpha = 0.5) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high), width = 0) +
+  geom_point(size = 2.5) +
+  labs(y = "Estimate", x = "Coefficient")
+```
+
+```{r predictions}
+nd_year_length <- expand.grid("pred_length_sc" = seq(min(Mod_fb$data$pred_length_sc),
+                                                   max(Mod_fb$data$pred_length_sc),
+                                                   length.out = 30), 
+                            "year_sc" = seq(min(Mod_fb$data$year_sc),
+                                            max(Mod_fb$data$year_sc),
+                                            length.out = length(unique(Mod_fb$data$year)) ))
+
+nd_year_length <- nd_year_length |>
+  mutate(depth_sc = 0,
+         year = 1993,
+         doy_sc = 0,
+         depth_sc = 0,
+         sal_sc = 0,
+         temp_sc = 0,
+         oxy_sc = 0)
+
+pred_fb <- predict(Mod_fb, newdata = nd_year_length, re_form = NA, se_fit = TRUE)
+pred_tv <- predict(Mod_tv, newdata = nd_year_length, re_form = NA, se_fit = TRUE)
+
+preds <- bind_rows(pred_fb |> mutate(lw_source = "fb"), 
+                   pred_tv |> mutate(lw_source = "tv"))
+```
+
+
+```{r plots}
+# effect of year and lw source
+preds |> 
+  filter(pred_length_sc %in% min(abs(0-unique(preds$pred_length_sc)))) |>
+  mutate(year = year_sc*sd(df_tot_env$year) + mean(df_tot_env$year)) |>
+  ggplot(aes(year, exp(est)^2, color = lw_source, fill = lw_source)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = exp(est-1.96*est_se)^2, ymax = exp(est+1.96*est_se)^2), color = NA, alpha = 0.3) +
+  scale_x_continuous(breaks = seq(min(df_tot_env$year), max(df_tot$year), by = 10)) +
+  labs(ylab= "cond. effect of year smooth") 
+
+# effect of predator length and lw source
+preds |> 
+  filter(year_sc %in% min(abs(0-unique(preds$year_sc)))) |>
+  mutate(pred_length = pred_length_sc *sd(df_tot_env$pred_length) + mean(df_tot_env$pred_length)) |>
+  ggplot(aes(pred_length, exp(est)^2, color = lw_source, fill = lw_source)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = exp(est-1.96*est_se)^2, ymax = exp(est+1.96*est_se)^2), color = NA, alpha = 0.3) +
+  labs(ylab= "cond. effect of pred_length smooth") 
+
+pred_fb |> 
+  mutate(est_fb = est) |>
+  left_join(pred_tv |> mutate(est_tv = est), join_by(year_sc, pred_length_sc)) |>
+  mutate(diff = est_fb - est_tv,
+         diff_norm = (diff)/max(diff),
+         year = year_sc*sd(df_tot_env$year) + mean(df_tot_env$year),
+         pred_length = pred_length_sc *sd(df_tot_env$pred_length) + mean(df_tot_env$pred_length)) |>
+  ggplot() + 
+  geom_raster(aes(year, pred_length, fill = diff_norm)) +
+  scale_fill_viridis() +
+  coord_cartesian(expand = 0)
+
+
+```
+Normalised difference between using fishbase and an estimated time varying a and b.

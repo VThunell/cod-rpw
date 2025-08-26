@@ -151,6 +151,9 @@ rpwpg_fit <-
 )
 time - Sys.time()
 ```
+```{r}
+sanity(rpwpg_fit)
+```
 
 
 ```{r predict}
@@ -287,8 +290,7 @@ nd_rpwtot <-
               # "year" = seq(min(df_q$year), max(df_q$year),
               #              length.out = length(unique(df_q$year)))
               "year" = seq(min(df_q$year), max(df_q$year),
-                           by = 1)
-              )
+                           by = 1))
 
 nd_rpwtot <- nd_rpwtot |>
   mutate(depth_sc = 0,
@@ -313,33 +315,20 @@ preds_tot_b <- preds_tot %>%
 ### Coeff. estimates tot
 
 ```{r}
-# Binomial model (1)
+# gamma model (1)
 # Extract random and fixed coefficients from the full model and continous part
-rpwtot_est_1 <- bind_rows(tidy(rpwpg_fit, effects = "ran_par", model = 1, conf.int = TRUE) %>%
+rpwtot_est <- bind_rows(tidy(rpwtot_fit, effects = "ran_par", conf.int = TRUE) %>%
                          filter(term %in% c("sigma_O", "sigma_E")),
-                       tidy(rpwpg_fit, effects = "fixed", model = 1, conf.int = TRUE)  %>%
+                       tidy(rpwtot_fit, effects = "fixed", conf.int = TRUE)  %>%
                          filter(!grepl('year', term))) %>%
   mutate(term = factor(term))
 
 # Sort the terms so that random effects are at the top...
-rpwtot_est_1 <- rpwtot_est_1 %>%
-  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
-         model = "binomial")
+rpwtot_est <- rpwtot_est %>%
+  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1))
 
-# Lognormal model (2)
-rpwtot_est_2 <- bind_rows(tidy(rpwpg_fit, effects = "ran_par", model = 2, conf.int = TRUE) %>%
-                         filter(term %in% c("sigma_O", "sigma_E")),
-                       tidy(rpwpg_fit, effects = "fixed", model = 2, conf.int = TRUE)  %>%
-                         filter(!grepl('year', term))) %>%
-  mutate(term = factor(term))
-
-# Sort the terms so that random effects are at the top...
-rpwtot_est_2 <- rpwtot_est_2 %>%
-  mutate(term2 = ifelse(term %in% c("sigma_E", "sigma_O"), 2, 1),
-         model = "lognormal")
-
-p_coeff_tot <- bind_rows(rpwtot_est_1, rpwtot_est_2) |>
-  ggplot(aes( estimate, reorder(term, term2), color = model)) +
+p_coeff_tot <- rpwtot_est |>
+  ggplot(aes( estimate, reorder(term, term2))) +
   geom_vline(xintercept = 0, linetype = 2, color = "gray40", alpha = 0.5) +
   geom_errorbar(aes(xmin = conf.low, xmax = conf.high), width = 0) +
   geom_point(size = 2.5) +
